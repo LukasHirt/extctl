@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -175,6 +176,83 @@ var defaultScaffoldExclude = []string{
 	"src/",
 	"package.json",
 	"vite.config.ts",
+}
+
+// LoadDotEnv reads a .env file and sets any unset environment variables found
+// in it. Shell-exported vars always win — we never overwrite an existing value.
+// Lines starting with # and blank lines are ignored. The expected format is
+// KEY=VALUE or KEY="VALUE" (quotes are stripped).
+func LoadDotEnv(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // .env is optional
+		}
+		return fmt.Errorf("open .env %s: %w", path, err)
+	}
+	defer f.Close()
+
+	var lineNum int
+	buf := make([]byte, 0, 4096)
+	tmp := make([]byte, 1)
+	line := make([]byte, 0, 256)
+
+	// Read byte-by-byte to avoid importing bufio.
+	for {
+		n, readErr := f.Read(tmp)
+		if n > 0 {
+			buf = append(buf, tmp[0])
+		}
+		if readErr != nil {
+			break
+		}
+	}
+
+	for _, b := range buf {
+		if b == '\n' {
+			lineNum++
+			s := strings.TrimSpace(string(line))
+			line = line[:0]
+			if s == "" || strings.HasPrefix(s, "#") {
+				continue
+			}
+			idx := strings.IndexByte(s, '=')
+			if idx < 1 {
+				return fmt.Errorf(".env %s line %d: expected KEY=VALUE", path, lineNum)
+			}
+			key := strings.TrimSpace(s[:idx])
+			val := strings.TrimSpace(s[idx+1:])
+			// Strip surrounding quotes.
+			if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+				val = val[1 : len(val)-1]
+			}
+			if os.Getenv(key) == "" {
+				if err := os.Setenv(key, val); err != nil {
+					return fmt.Errorf(".env set %s: %w", key, err)
+				}
+			}
+		} else {
+			line = append(line, b)
+		}
+	}
+	// Handle file not ending in newline.
+	if s := strings.TrimSpace(string(line)); s != "" && !strings.HasPrefix(s, "#") {
+		idx := strings.IndexByte(s, '=')
+		if idx < 1 {
+			return fmt.Errorf(".env %s: expected KEY=VALUE", path)
+		}
+		key := strings.TrimSpace(s[:idx])
+		val := strings.TrimSpace(s[idx+1:])
+		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+			val = val[1 : len(val)-1]
+		}
+		if os.Getenv(key) == "" {
+			if err := os.Setenv(key, val); err != nil {
+				return fmt.Errorf(".env set %s: %w", key, err)
+			}
+		}
+	}
+	return nil
 }
 
 func Load(path string) (*Config, error) {
