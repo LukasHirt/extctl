@@ -1,0 +1,15 @@
+# idea-pool.yaml
+#
+# Seed ideas for the Phase A spec generator (prompts/gen-specs.md).
+# Entries here are terse — a line or two each. The generator expands chosen
+# seeds into full one-page specs, or proposes net-new ideas grounded in the
+# extension-point table and repo investigation if this pool is thin or empty.
+#
+# Schema:
+#   - seed: <short description, a sentence or less>
+#     area: <category tag, e.g. file-management | organization | ai | search | productivity>
+#
+# Carryover and decay (per spec §5.4) are tracked on the Jira candidate issues,
+# not here — this file is just the raw idea backlog.
+
+[]
