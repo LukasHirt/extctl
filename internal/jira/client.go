@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 )
 
@@ -118,10 +116,12 @@ func (c *Client) SearchIssues(jql string, fields []string) ([]IssueRef, error) {
 	if len(fields) == 0 {
 		fields = []string{"status"}
 	}
-	q := url.Values{}
-	q.Set("jql", jql)
-	q.Set("fields", strings.Join(fields, ","))
-	q.Set("maxResults", "50")
+
+	body := map[string]any{
+		"jql":        jql,
+		"fields":     fields,
+		"maxResults": 50,
+	}
 
 	var result struct {
 		Issues []struct {
@@ -133,7 +133,7 @@ func (c *Client) SearchIssues(jql string, fields []string) ([]IssueRef, error) {
 			} `json:"fields"`
 		} `json:"issues"`
 	}
-	if err := c.get("/rest/api/2/search?"+q.Encode(), &result); err != nil {
+	if err := c.post("/rest/api/3/search/jql", body, &result); err != nil {
 		return nil, fmt.Errorf("search issues (jql=%q): %w", jql, err)
 	}
 
