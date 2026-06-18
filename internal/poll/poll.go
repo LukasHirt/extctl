@@ -182,11 +182,12 @@ func Run(opts Options) (*Result, error) {
 	}
 
 	var wg sync.WaitGroup
+	var budgetMu sync.Mutex
 	for _, p := range allPicked {
 		wg.Add(1)
 		go func(candidate state.Candidate) {
 			defer wg.Done()
-			if err := runBuild(opts, date, candidate, jiraClient); err != nil {
+			if err := runBuild(opts, date, candidate, jiraClient, &budgetMu); err != nil {
 				fmt.Printf("poll: build error for %s: %v\n", candidate.ID, err)
 			}
 		}(p)
@@ -230,7 +231,7 @@ func checkMergedPRs(opts Options, date string, slate *state.Slate, jiraClient *j
 
 // runBuild runs the full Phase B pipeline for a picked candidate:
 // build → gate → repair loop → publish (or draft PR on block)
-func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *jira.Client) error {
+func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *jira.Client, budgetMu *sync.Mutex) error {
 	runsDir := opts.Config.RunsDir
 
 	// Idempotency: check existing build state.
@@ -273,15 +274,17 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 		logf("build: in phase %s; restarting build\n", bs.Phase)
 	}
 
-	// Check daily budget.
-	if err := checkBudget(opts.Config, runsDir, date); err != nil {
-		return err
-	}
-
 	branch := fmt.Sprintf("ext/%s-%s", date, candidate.ID)
 	worktreePath := filepath.Join(runsDir, date, candidate.ID, "worktree")
 	outputDir := filepath.Join(runsDir, date, candidate.ID)
 
+	// Check daily budget and write initial state atomically so concurrent builds
+	// see each other's in-progress reservations before their own Claude run starts.
+	budgetMu.Lock()
+	if err := checkBudget(opts.Config, runsDir, date); err != nil {
+		budgetMu.Unlock()
+		return err
+	}
 	bs = &build.State{
 		ID:      candidate.ID,
 		Date:    date,
@@ -290,8 +293,10 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 		Phase:   build.PhaseBuilding,
 	}
 	if err := build.SaveState(runsDir, bs); err != nil {
+		budgetMu.Unlock()
 		return fmt.Errorf("save initial build state: %w", err)
 	}
+	budgetMu.Unlock()
 
 	// Create git worktree.
 	repoPath := opts.Config.TargetRepo.Checkout
@@ -332,6 +337,10 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 	bs.CostUSD = buildResult.CostUSD
 	bs.Turns = buildResult.Turns
 	bs.Attempts = buildResult.Attempts
+	if bs.CostUSD > opts.Config.Claude.BudgetUSDPerBuild {
+		logf("build: warning: initial build cost $%.4f exceeds per-build budget of $%.2f\n",
+			bs.CostUSD, opts.Config.Claude.BudgetUSDPerBuild)
+	}
 
 	bs.Phase = build.PhaseGating
 	_ = build.SaveState(runsDir, bs)
@@ -351,7 +360,14 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 	for !gateResult.Passed {
 		if bs.Attempts > maxRepairs {
 			// All repair attempts exhausted: push a draft PR and comment with details.
-			return publishBlocked(opts, date, candidate, bs, gateResult, outputDir, jiraClient)
+			return publishBlocked(opts, date, candidate, bs, gateResult, outputDir, jiraClient,
+				fmt.Sprintf("gate failed after %d repair attempt(s)", bs.Attempts-1))
+		}
+		if bs.CostUSD >= opts.Config.Claude.BudgetUSDPerBuild {
+			logf("build: per-build budget of $%.2f exceeded ($%.4f spent); skipping repair\n",
+				opts.Config.Claude.BudgetUSDPerBuild, bs.CostUSD)
+			return publishBlocked(opts, date, candidate, bs, gateResult, outputDir, jiraClient,
+				fmt.Sprintf("per-build budget of $%.2f exceeded ($%.4f spent)", opts.Config.Claude.BudgetUSDPerBuild, bs.CostUSD))
 		}
 
 		logf("build: gate failed (attempt %d/%d); running repair…\n", bs.Attempts, maxRepairs)
@@ -462,7 +478,7 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 // publishBlocked pushes the current branch as a draft PR and comments with
 // the failure details. The Jira issue is left in Doing — a developer or
 // manager reviews the PR and decides what to do next.
-func publishBlocked(opts Options, date string, candidate state.Candidate, bs *build.State, gateResult *gate.Result, outputDir string, jiraClient *jira.Client) error {
+func publishBlocked(opts Options, date string, candidate state.Candidate, bs *build.State, gateResult *gate.Result, outputDir string, jiraClient *jira.Client, reason string) error {
 	logf := func(format string, args ...any) {
 		fmt.Printf("["+candidate.ID+"] "+format, args...)
 	}
@@ -470,7 +486,7 @@ func publishBlocked(opts Options, date string, candidate state.Candidate, bs *bu
 	repoPath := opts.Config.TargetRepo.Checkout
 
 	bs.Phase = build.PhaseBlocked
-	bs.ErrorMsg = fmt.Sprintf("gate failed after %d repair attempt(s)", bs.Attempts-1)
+	bs.ErrorMsg = reason
 	_ = build.SaveState(runsDir, bs)
 
 	logf("build: exhausted repairs; pushing draft PR for manual review…\n")
@@ -551,6 +567,10 @@ func countBullets(specMD string) int {
 }
 
 // checkBudget returns an error if the daily build budget is already exceeded.
+// Must be called while holding the caller's budgetMu to avoid TOCTOU races
+// between concurrent builds reading the same zero-cost initial state.
+// In-progress builds (Building/Gating/Repairing) count as BudgetUSDPerBuild
+// each (worst-case reservation) so that a second goroutine sees the slot taken.
 func checkBudget(cfg *config.Config, runsDir, date string) error {
 	dirPath := filepath.Join(runsDir, date)
 	entries, err := os.ReadDir(dirPath)
@@ -563,12 +583,18 @@ func checkBudget(cfg *config.Config, runsDir, date string) error {
 			continue
 		}
 		bs, err := build.LoadState(runsDir, date, e.Name())
-		if err == nil && bs != nil {
+		if err != nil || bs == nil {
+			continue
+		}
+		switch bs.Phase {
+		case build.PhaseBuilding, build.PhaseGating, build.PhaseRepairing:
+			totalCost += cfg.Claude.BudgetUSDPerBuild
+		default:
 			totalCost += bs.CostUSD
 		}
 	}
 	if totalCost >= cfg.Claude.BudgetUSDPerDay {
-		return fmt.Errorf("daily budget of $%.2f exceeded (spent $%.2f); skipping build",
+		return fmt.Errorf("daily budget of $%.2f exceeded (reserved/spent $%.2f); skipping build",
 			cfg.Claude.BudgetUSDPerDay, totalCost)
 	}
 	return nil
