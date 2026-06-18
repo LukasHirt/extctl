@@ -1,0 +1,49 @@
+# extctl.yaml — pipeline configuration
+# Copy this to extctl.yaml and fill in the values.
+# Never commit extctl.yaml if it contains real URLs or project keys you
+# don't want public. Credentials must be set as env vars; never put them
+# in this file:
+#   EXTCTL_JIRA_EMAIL — your Atlassian account email
+#   EXTCTL_JIRA_TOKEN — your Atlassian API token (id.atlassian.com/manage-profile/security/api-tokens)
+
+timezone: Europe/Prague
+fresh_candidates_per_day: 3 # always 3; not configurable per the ownCloud agreement
+
+target_repo:
+  remote: owncloud/web-extensions # GitHub repo for PRs
+  checkout: '../web-extensions' # local path to the checkout
+
+default_branch: main
+
+jira:
+  base_url: 'https://jira.example.com' # your Jira Server/DC base URL
+  project: '' # project key
+  # Exact status names from your Jira workflow — must match literally:
+  candidate_status: 'Needs Approval'
+  pick_status: 'Doing'
+  decline_status: 'Not Doing'
+  build_status: 'Doing'
+  poll_interval_min: 10
+
+claude:
+  version_pin: '' # e.g. "2.1.0"; empty = use whatever is installed
+  spec_gen_max_turns: 20
+  build_max_turns:
+    S: 50
+    M: 60
+    L: 80
+  budget_usd_per_build: 8
+  budget_usd_per_day: 20
+
+decay:
+  max_appearances: 3 # 1 initial + 2 carryovers
+  action: backlog # backlog | decline | ask
+
+prompts:
+  gen_specs: 'prompts/gen-specs.md'
+  build: 'prompts/build-extension.md'
+  repair: 'prompts/repair.md'
+  revise: 'prompts/revise.md'
+
+idea_pool: 'idea-pool.yaml'
+runs_dir: 'runs'

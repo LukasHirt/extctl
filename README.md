@@ -13,7 +13,7 @@ Early development — Phase 1 (morning gen run + Jira issue creation).
 
 ## Requirements
 
-- Go 1.26+
+- Go >=1.26.4
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and
   authenticated (`claude --version`)
 - Access to a Jira Server / Data Center instance with a Personal Access Token
@@ -22,7 +22,7 @@ Early development — Phase 1 (morning gen run + Jira issue creation).
 ## Installation
 
 ```bash
-git clone https://github.com/<your-org>/extctl
+git clone https://github.com/LukasHirt/extctl
 cd extctl
 go install ./cmd/extctl
 ```
