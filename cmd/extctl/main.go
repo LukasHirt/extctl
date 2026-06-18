@@ -41,9 +41,10 @@ var rootCmd = &cobra.Command{
 // --- gen command ---
 
 var (
-	genDryRun bool
-	genModel  string
-	genDate   string
+	genDryRun  bool
+	genSkipJira bool
+	genModel   string
+	genDate    string
 )
 
 var genCmd = &cobra.Command{
@@ -51,10 +52,11 @@ var genCmd = &cobra.Command{
 	Short: "Generate today's 3 fresh agentic extension specs and create Jira issues",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := gen.Run(gen.Options{
-			Config: cfg,
-			DryRun: genDryRun,
-			Date:   genDate,
-			Model:  genModel,
+			Config:   cfg,
+			DryRun:   genDryRun,
+			SkipJira: genSkipJira,
+			Date:     genDate,
+			Model:    genModel,
 		})
 		if err != nil {
 			return err
@@ -170,12 +172,12 @@ func init() {
 
 	genCmd.Flags().BoolVar(&genDryRun, "dry-run", false,
 		"print the prompt that would be sent without calling claude or creating issues")
+	genCmd.Flags().BoolVar(&genSkipJira, "skip-jira", false,
+		"run claude and show parsed candidates but do not create Jira issues or write slate")
 	genCmd.Flags().StringVar(&genModel, "model", "",
 		"claude model to use (e.g. claude-opus-4-6); defaults to claude's own default")
 	genCmd.Flags().StringVar(&genDate, "date", "",
 		"date to generate for in YYYY-MM-DD format (default: today)")
-
-	slateCarryoversCmd.Flags().String("format", "", "output format: dedup-hint")
 
 	slateCarryoversCmd.Flags().String("format", "", "output format: dedup-hint")
 

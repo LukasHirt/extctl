@@ -15,10 +15,11 @@ import (
 
 // Options controls a single gen run.
 type Options struct {
-	Config  *config.Config
-	DryRun  bool   // if true, print what would happen but don't call claude or create issues
-	Date    string // YYYY-MM-DD; defaults to today in the configured timezone
-	Model   string // optional claude model override
+	Config   *config.Config
+	DryRun   bool   // if true, print what would happen but don't call claude or create issues
+	SkipJira bool   // if true, run claude and parse candidates but don't create Jira issues
+	Date     string // YYYY-MM-DD; defaults to today in the configured timezone
+	Model    string // optional claude model override
 }
 
 // Result summarises what happened.
@@ -91,7 +92,32 @@ func Run(opts Options) (*Result, error) {
 	}
 
 	if opts.DryRun {
-		fmt.Println("=== DRY RUN: prompt that would be sent to claude ===")
+		fmt.Printf("=== DRY RUN: %s ===\n\n", date)
+		fmt.Printf("Fresh candidates to generate: %d\n", opts.Config.FreshCandidatesPerDay)
+		fmt.Printf("Claude working dir: %s\n", opts.Config.TargetRepo.Checkout)
+		fmt.Printf("Max turns: %d\n\n", opts.Config.Claude.SpecGenMaxTurns)
+
+		if len(carryovers) > 0 {
+			fmt.Printf("Carryovers (%d):\n", len(carryovers))
+			for _, c := range carryovers {
+				fmt.Printf("  [%d/%d] %s — %s\n", c.Appearances, opts.Config.Decay.MaxAppearances, c.ID, c.Title)
+			}
+		} else {
+			fmt.Println("Carryovers: none")
+		}
+		fmt.Println()
+
+		if len(deliveredIDs) > 0 {
+			fmt.Printf("Already delivered (dedup guard) (%d):\n", len(deliveredIDs))
+			for id := range deliveredIDs {
+				fmt.Printf("  %s\n", id)
+			}
+		} else {
+			fmt.Println("Already delivered: none")
+		}
+		fmt.Println()
+
+		fmt.Println("=== PROMPT THAT WOULD BE SENT TO CLAUDE ===")
 		fmt.Println(prompt)
 		fmt.Println("=== END PROMPT ===")
 		return &Result{Date: date, Carryovers: carryovers, DryRun: true}, nil
@@ -129,6 +155,27 @@ func Run(opts Options) (*Result, error) {
 	if len(candidates) != opts.Config.FreshCandidatesPerDay {
 		fmt.Printf("warning: expected %d candidates, got %d — proceeding with what was returned\n",
 			opts.Config.FreshCandidatesPerDay, len(candidates))
+	}
+
+	// Print parsed candidates regardless of --skip-jira.
+	fmt.Println()
+	for i, c := range candidates {
+		fmt.Printf("Candidate %d: %s — %s (effort: %s)\n", i+1, c.ID, c.Title, c.Effort)
+	}
+	fmt.Println()
+
+	if opts.SkipJira {
+		fmt.Println("--skip-jira: Jira issues not created. Slate not written.")
+		var fresh []state.Candidate
+		for _, c := range candidates {
+			fresh = append(fresh, state.Candidate{
+				ID:     c.ID,
+				Title:  c.Title,
+				Effort: c.Effort,
+				Origin: "generated",
+			})
+		}
+		return &Result{Date: date, Carryovers: carryovers, Fresh: fresh}, nil
 	}
 
 	// 6. Create Jira issues.
