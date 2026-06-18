@@ -29,7 +29,7 @@ go install ./cmd/extctl
 
 ## Configuration
 
-Copy `extctl.example.yaml` to `extctl.yaml` in your `extctl-pipeline` working
+Copy `extctl.example.yaml` to `extctl.yaml` in your `extctl` working
 directory and fill in the values. See comments in the example file for details.
 
 ## Usage
