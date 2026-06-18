@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ type Options struct {
 	Config   *config.Config
 	DryRun   bool   // if true, print what would happen but don't call claude or create issues
 	SkipJira bool   // if true, run claude and parse candidates but don't create Jira issues
+	FromFile string // if set, skip claude and read candidates from this specgen.json path
 	Date     string // YYYY-MM-DD; defaults to today in the configured timezone
 	Model    string // optional claude model override
 }
@@ -123,26 +125,51 @@ func Run(opts Options) (*Result, error) {
 		return &Result{Date: date, Carryovers: carryovers, DryRun: true}, nil
 	}
 
-	// 4. Run claude.
+	// 4. Run claude or load from existing file.
 	outputFile := filepath.Join(opts.Config.RunsDir, date, "specgen.json")
-	claudeOpts := claude.RunOptions{
-		Prompt:       prompt,
-		AllowedTools: []string{"Read", "Grep", "Glob"},
-		MaxTurns:     opts.Config.Claude.SpecGenMaxTurns,
-		WorkDir:      opts.Config.TargetRepo.Checkout,
-		OutputFile:   outputFile,
-		Model:        opts.Model,
+
+	var result *claude.Result
+	if opts.FromFile != "" {
+		// Load candidates from an existing specgen.json instead of calling Claude.
+		fmt.Printf("Loading candidates from %s…\n", opts.FromFile)
+		data, err := os.ReadFile(opts.FromFile)
+		if err != nil {
+			return nil, fmt.Errorf("read --from-file %s: %w", opts.FromFile, err)
+		}
+		var r claude.Result
+		if err := json.Unmarshal(data, &r); err != nil {
+			return nil, fmt.Errorf("parse --from-file %s: %w", opts.FromFile, err)
+		}
+		result = &r
+		// Copy to the canonical output location if it's a different file.
+		if abs, _ := filepath.Abs(opts.FromFile); abs != outputFile {
+			if err := os.MkdirAll(filepath.Dir(outputFile), 0o755); err != nil {
+				return nil, fmt.Errorf("mkdir for output file: %w", err)
+			}
+			if err := os.WriteFile(outputFile, data, 0o644); err != nil {
+				return nil, fmt.Errorf("copy specgen.json: %w", err)
+			}
+		}
+		fmt.Printf("Loaded: %d turns, $%.4f\n", result.NumTurns, result.TotalCostUSD)
+	} else {
+		claudeOpts := claude.RunOptions{
+			Prompt:       prompt,
+			AllowedTools: []string{"Read", "Grep", "Glob"},
+			MaxTurns:     opts.Config.Claude.SpecGenMaxTurns,
+			WorkDir:      opts.Config.TargetRepo.Checkout,
+			OutputFile:   outputFile,
+			Model:        opts.Model,
+		}
+
+		fmt.Printf("Running claude (max %d turns, working dir: %s)…\n",
+			claudeOpts.MaxTurns, claudeOpts.WorkDir)
+
+		result, err = claude.Run(claudeOpts)
+		if err != nil {
+			return nil, fmt.Errorf("claude run: %w", err)
+		}
+		fmt.Printf("Claude finished: %d turns, $%.4f\n", result.NumTurns, result.TotalCostUSD)
 	}
-
-	fmt.Printf("Running claude (max %d turns, working dir: %s)…\n",
-		claudeOpts.MaxTurns, claudeOpts.WorkDir)
-
-	result, err := claude.Run(claudeOpts)
-	if err != nil {
-		return nil, fmt.Errorf("claude run: %w", err)
-	}
-
-	fmt.Printf("Claude finished: %d turns, $%.4f\n", result.NumTurns, result.TotalCostUSD)
 
 	// 5. Parse candidates.
 	candidates, err := claude.ParseCandidates(result.Result)
