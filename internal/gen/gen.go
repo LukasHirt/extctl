@@ -100,8 +100,7 @@ func Run(opts Options) (*Result, error) {
 	if opts.DryRun {
 		fmt.Printf("=== DRY RUN: %s ===\n\n", date)
 		fmt.Printf("Fresh candidates to generate: %d\n", opts.Config.FreshCandidatesPerDay)
-		fmt.Printf("Claude working dir: %s\n", opts.Config.TargetRepo.Checkout)
-		fmt.Printf("Max turns: %d\n\n", opts.Config.Claude.SpecGenMaxTurns)
+		fmt.Printf("Claude working dir: %s\n\n", opts.Config.TargetRepo.Checkout)
 
 		if len(carryovers) > 0 {
 			fmt.Printf("Carryovers (%d):\n", len(carryovers))
@@ -159,14 +158,12 @@ func Run(opts Options) (*Result, error) {
 		claudeOpts := claude.RunOptions{
 			Prompt:       prompt,
 			AllowedTools: []string{"Read", "Grep", "Glob"},
-			MaxTurns:     opts.Config.Claude.SpecGenMaxTurns,
 			WorkDir:      opts.Config.TargetRepo.Checkout,
 			OutputFile:   outputFile,
 			Model:        opts.Model,
 		}
 
-		fmt.Printf("Running claude (max %d turns, working dir: %s)…\n",
-			claudeOpts.MaxTurns, claudeOpts.WorkDir)
+		fmt.Printf("Running claude (working dir: %s)…\n", claudeOpts.WorkDir)
 
 		result, err = claude.Run(claudeOpts)
 		if err != nil {

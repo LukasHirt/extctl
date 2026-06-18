@@ -11,14 +11,13 @@ import (
 type Phase string
 
 const (
-	PhaseBuilding    Phase = "building"
-	PhaseContinuing  Phase = "continuing" // hit max turns; running continuation pass
-	PhaseGating      Phase = "gating"
-	PhaseRepairing   Phase = "repairing"
-	PhaseGated       Phase = "gated"      // gate passed
-	PhasePublishing  Phase = "publishing"
-	PhaseDone        Phase = "done"
-	PhaseBlocked     Phase = "blocked"    // gate failed after repair
+	PhaseBuilding   Phase = "building"
+	PhaseGating     Phase = "gating"
+	PhaseRepairing  Phase = "repairing"
+	PhaseGated      Phase = "gated"   // gate passed
+	PhasePublishing Phase = "publishing"
+	PhaseDone       Phase = "done"
+	PhaseBlocked    Phase = "blocked" // gate failed after repair
 )
 
 // GateStages holds the per-stage result from gate/run-gate.sh.

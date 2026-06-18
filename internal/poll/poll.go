@@ -333,31 +333,6 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 	bs.Turns = buildResult.Turns
 	bs.Attempts = buildResult.Attempts
 
-	// If Claude hit the turn limit, run a continuation pass before gating.
-	if buildResult.MaxTurnsReached {
-		bs.Phase = build.PhaseContinuing
-		_ = build.SaveState(runsDir, bs)
-
-		continueResult, continueErr := build.Continue(build.Options{
-			Config:       opts.Config,
-			CandidateID:  candidate.ID,
-			JiraKey:      candidate.JiraKey,
-			SpecMD:       candidate.SpecMD,
-			Effort:       candidate.Effort,
-			Date:         date,
-			WorktreePath: worktreePath,
-			LogPrefix:    logPrefix,
-		}, sessionID)
-		if continueErr != nil {
-			logf("build: continuation failed (%v) — proceeding to gate with partial output\n", continueErr)
-		} else {
-			sessionID = continueResult.SessionID
-			bs.SessionID = sessionID
-			bs.CostUSD += continueResult.CostUSD
-			bs.Turns += continueResult.Turns
-		}
-	}
-
 	bs.Phase = build.PhaseGating
 	_ = build.SaveState(runsDir, bs)
 

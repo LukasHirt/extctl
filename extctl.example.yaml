@@ -27,11 +27,6 @@ jira:
 
 claude:
   version_pin: '' # e.g. "2.1.0"; empty = use whatever is installed
-  spec_gen_max_turns: 20
-  build_max_turns:
-    S: 50
-    M: 60
-    L: 80
   max_repair_attempts: 3  # gate → repair loop retries before giving up
   budget_usd_per_build: 8
   budget_usd_per_day: 20
@@ -43,7 +38,6 @@ decay:
 prompts:
   gen_specs: 'prompts/gen-specs.md'
   build: 'prompts/build-extension.md'
-  continue: 'prompts/continue-build.md'
   repair: 'prompts/repair.md'
   revise: 'prompts/revise.md'
 
