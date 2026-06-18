@@ -18,6 +18,8 @@ OUTPUT_DIR="$3"
 SPEC_BULLET_COUNT="${4:-1}"  # minimum expect() assertions required
 
 mkdir -p "$OUTPUT_DIR"
+OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)
+WORKTREE=$(cd "$WORKTREE" && pwd)
 LOG="$OUTPUT_DIR/gate.log"
 GATE_JSON="$OUTPUT_DIR/gate.json"
 
@@ -63,7 +65,7 @@ log ""
 log "--- Stage 1: hygiene ---"
 
 # Working tree must be clean (all changes committed).
-if cd "$WORKTREE" && git status --porcelain | grep -q .; then
+if ( cd "$WORKTREE" && git status --porcelain | grep -q . ); then
   stage_fail hygiene "working tree is not clean (uncommitted changes)"
   write_json false; exit 1
 fi
