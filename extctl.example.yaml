@@ -43,6 +43,7 @@ decay:
 prompts:
   gen_specs: 'prompts/gen-specs.md'
   build: 'prompts/build-extension.md'
+  continue: 'prompts/continue-build.md'
   repair: 'prompts/repair.md'
   revise: 'prompts/revise.md'
 

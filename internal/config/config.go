@@ -57,6 +57,7 @@ type Decay struct {
 type Prompts struct {
 	GenSpecs string `yaml:"gen_specs"`
 	Build    string `yaml:"build"`
+	Continue string `yaml:"continue"`
 	Repair   string `yaml:"repair"`
 	Revise   string `yaml:"revise"`
 }
@@ -123,6 +124,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Prompts.Build == "" {
 		c.Prompts.Build = "prompts/build-extension.md"
+	}
+	if c.Prompts.Continue == "" {
+		c.Prompts.Continue = "prompts/continue-build.md"
 	}
 	if c.Prompts.Repair == "" {
 		c.Prompts.Repair = "prompts/repair.md"

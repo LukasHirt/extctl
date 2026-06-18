@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -12,11 +13,24 @@ func FetchOrigin(repoPath string) error {
 	return run(repoPath, "fetch", "origin")
 }
 
-// CreateWorktree creates a git worktree at worktreePath on a new branch
-// branched from baseBranch (e.g. "origin/main").
-// Branch name convention: ext/<date>-<id>
+// CreateWorktree creates (or reuses) a git worktree at worktreePath on branch.
+// Handles three cases from interrupted prior runs:
+//   - worktree dir exists → reuse as-is
+//   - branch exists but worktree dir doesn't → add without -b
+//   - neither exists → create branch and worktree fresh
 func CreateWorktree(repoPath, worktreePath, branch, baseBranch string) error {
+	if _, err := os.Stat(worktreePath); err == nil {
+		return nil // worktree already set up from a prior run
+	}
+	if branchExists(repoPath, branch) {
+		return run(repoPath, "worktree", "add", worktreePath, branch)
+	}
 	return run(repoPath, "worktree", "add", worktreePath, "-b", branch, baseBranch)
+}
+
+func branchExists(repoPath, branch string) bool {
+	out, err := exec.Command("git", "-C", repoPath, "branch", "--list", branch).Output()
+	return err == nil && len(strings.TrimSpace(string(out))) > 0
 }
 
 // RemoveWorktree removes the worktree at worktreePath from the given repo.
