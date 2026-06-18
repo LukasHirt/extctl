@@ -32,7 +32,9 @@ type RunOptions struct {
 // Run invokes claude -p headlessly and returns the parsed result.
 // It also writes the raw JSON to opts.OutputFile if set.
 func Run(opts RunOptions) (*Result, error) {
-	args := []string{"-p", opts.Prompt}
+	// -p (--print) is a flag with no argument; the prompt is read from stdin.
+	// Passing it as an argv element hits ARG_MAX on large prompts.
+	args := []string{"-p"}
 
 	if len(opts.AllowedTools) > 0 {
 		args = append(args, "--allowedTools", strings.Join(opts.AllowedTools, ","))
@@ -51,6 +53,7 @@ func Run(opts RunOptions) (*Result, error) {
 	}
 	// Pass through the environment; the subprocess needs ANTHROPIC_API_KEY.
 	cmd.Env = os.Environ()
+	cmd.Stdin = strings.NewReader(opts.Prompt)
 
 	out, err := cmd.Output()
 	if err != nil {
