@@ -1,0 +1,75 @@
+package gate
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+)
+
+// Stages holds per-stage verdicts from run-gate.sh.
+type Stages struct {
+	Hygiene string `json:"hygiene"` // "ok" | "fail"
+	Build   string `json:"build"`
+	Lint    string `json:"lint"`
+	Unit    string `json:"unit"`
+}
+
+// Result is the output of gate/run-gate.sh, read from gate.json.
+type Result struct {
+	Passed bool    `json:"passed"`
+	Score  float64 `json:"score"`
+	Stages Stages  `json:"stages"`
+}
+
+// Run executes gate/run-gate.sh and returns the parsed result.
+// scriptPath is the absolute path to gate/run-gate.sh.
+// outputDir is where gate.json and gate.log will be written.
+// specBulletCount is the minimum number of expect() calls required in acceptance.spec.ts.
+func Run(scriptPath, worktreePath, extID, outputDir string, specBulletCount int) (*Result, error) {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return nil, fmt.Errorf("mkdir gate output dir: %w", err)
+	}
+
+	args := []string{worktreePath, extID, outputDir, fmt.Sprintf("%d", specBulletCount)}
+	cmd := exec.Command(scriptPath, args...)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	logPath := filepath.Join(outputDir, "gate.log")
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		return nil, fmt.Errorf("create gate.log: %w", err)
+	}
+	defer logFile.Close()
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+
+	fmt.Printf("gate: running %s…\n", scriptPath)
+	_ = cmd.Run() // exit code is encoded in gate.json; don't treat non-zero as a Go error
+
+	// Read gate.json written by the script.
+	jsonPath := filepath.Join(outputDir, "gate.json")
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		return nil, fmt.Errorf("read gate.json: %w", err)
+	}
+	var result Result
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("parse gate.json: %w", err)
+	}
+	return &result, nil
+}
+
+// ReadLog returns the contents of gate.log from the output directory.
+func ReadLog(outputDir string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(outputDir, "gate.log"))
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read gate.log: %w", err)
+	}
+	return string(data), nil
+}

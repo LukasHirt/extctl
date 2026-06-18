@@ -85,7 +85,11 @@ func Run(opts Options) (*Result, error) {
 
 	// 2. Derive carryovers and delivered IDs.
 	carryovers := state.Carryovers(allSlates, date, opts.Config.Decay.MaxAppearances)
-	deliveredIDs := state.DeliveredIDs(allSlates)
+	deliveredYAML, err := state.LoadDelivered(opts.Config.DeliveredYAML)
+	if err != nil {
+		return nil, fmt.Errorf("load delivered.yaml: %w", err)
+	}
+	deliveredIDs := state.DeliveredIDs(allSlates, deliveredYAML)
 
 	// 3. Build prompt.
 	prompt, err := buildPrompt(opts.Config, carryovers, deliveredIDs)

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // CandidateStatus mirrors the lifecycle of a spec candidate.
@@ -15,8 +17,9 @@ const (
 	StatusNeedsApproval CandidateStatus = "needs_approval"
 	StatusPicked        CandidateStatus = "picked"
 	StatusDeclined      CandidateStatus = "declined"
-	StatusDecayed       CandidateStatus = "decayed"   // hit max appearances
-	StatusBacklogged    CandidateStatus = "backlogged" // promoted to backlog after decay
+	StatusDecayed       CandidateStatus = "decayed"    // hit max appearances
+	StatusBacklogged    CandidateStatus = "backlogged"  // promoted to backlog after decay
+	StatusRejected      CandidateStatus = "rejected"   // permanently invalid, never repropose
 )
 
 // Candidate is a single spec candidate in the daily slate.
@@ -151,16 +154,48 @@ func Carryovers(slates []*Slate, today string, maxAppearances int) []Candidate {
 	return out
 }
 
-// DeliveredIDs returns the set of candidate IDs that have ever been picked,
-// for use as a deduplication guard in spec generation.
-func DeliveredIDs(slates []*Slate) map[string]bool {
+// DeliveredIDs returns the set of candidate IDs that have ever been picked or
+// rejected, plus any IDs in the provided deliveredYAML map (pre-pipeline
+// manually-built extensions). All are used as a deduplication guard in spec
+// generation.
+func DeliveredIDs(slates []*Slate, deliveredYAML map[string]bool) map[string]bool {
 	out := map[string]bool{}
+	for id := range deliveredYAML {
+		out[id] = true
+	}
 	for _, s := range slates {
 		for _, c := range s.Candidates {
-			if c.Status == StatusPicked {
+			if c.Status == StatusPicked || c.Status == StatusRejected {
 				out[c.ID] = true
 			}
 		}
 	}
 	return out
+}
+
+// deliveredEntry is one record in runs/delivered.yaml.
+type deliveredEntry struct {
+	ID    string `yaml:"id"`
+	Title string `yaml:"title"`
+}
+
+// LoadDelivered reads runs/delivered.yaml and returns the set of IDs.
+// Returns an empty map if the file does not exist.
+func LoadDelivered(path string) (map[string]bool, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return map[string]bool{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read delivered.yaml %s: %w", path, err)
+	}
+	var entries []deliveredEntry
+	if err := yaml.Unmarshal(data, &entries); err != nil {
+		return nil, fmt.Errorf("parse delivered.yaml %s: %w", path, err)
+	}
+	out := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		out[e.ID] = true
+	}
+	return out, nil
 }

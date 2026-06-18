@@ -23,9 +23,10 @@ type RunOptions struct {
 	Prompt       string
 	AllowedTools []string
 	MaxTurns     int
-	Model        string   // optional; defaults to claude's own default
-	WorkDir      string   // working directory for the subprocess
-	OutputFile   string   // path to write the raw JSON result
+	Model        string // optional; defaults to claude's own default
+	WorkDir      string // working directory for the subprocess
+	OutputFile   string // path to write the raw JSON result
+	Resume       string // session_id to resume (for repair runs, per spec §8.3)
 }
 
 // Run invokes claude -p headlessly and returns the parsed result.
@@ -41,6 +42,9 @@ func Run(opts RunOptions) (*Result, error) {
 	}
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
+	}
+	if opts.Resume != "" {
+		args = append(args, "--resume", opts.Resume)
 	}
 	args = append(args, "--output-format", "json")
 
