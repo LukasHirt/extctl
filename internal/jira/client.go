@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -100,6 +102,49 @@ func (c *Client) Transition(issueKey, statusName string) error {
 		return fmt.Errorf("transition %s to %q: %w", issueKey, statusName, err)
 	}
 	return nil
+}
+
+// IssueRef is a lightweight Jira issue returned by SearchIssues.
+type IssueRef struct {
+	Key    string
+	Status string
+}
+
+// SearchIssues runs a JQL query and returns matching issues with the requested
+// fields populated. Returns an empty slice (not an error) when there are no results.
+// fields should be a subset of ["status", "summary", "labels"]; if empty, only
+// the issue key is returned.
+func (c *Client) SearchIssues(jql string, fields []string) ([]IssueRef, error) {
+	if len(fields) == 0 {
+		fields = []string{"status"}
+	}
+	q := url.Values{}
+	q.Set("jql", jql)
+	q.Set("fields", strings.Join(fields, ","))
+	q.Set("maxResults", "50")
+
+	var result struct {
+		Issues []struct {
+			Key    string `json:"key"`
+			Fields struct {
+				Status struct {
+					Name string `json:"name"`
+				} `json:"status"`
+			} `json:"fields"`
+		} `json:"issues"`
+	}
+	if err := c.get("/rest/api/2/search?"+q.Encode(), &result); err != nil {
+		return nil, fmt.Errorf("search issues (jql=%q): %w", jql, err)
+	}
+
+	out := make([]IssueRef, 0, len(result.Issues))
+	for _, iss := range result.Issues {
+		out = append(out, IssueRef{
+			Key:    iss.Key,
+			Status: iss.Fields.Status.Name,
+		})
+	}
+	return out, nil
 }
 
 // AddComment adds a comment to an issue.

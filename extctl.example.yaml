@@ -22,7 +22,7 @@ jira:
   candidate_status: 'Needs Approval'
   pick_status: 'Doing'
   decline_status: 'Not Doing'
-  build_status: 'Doing'
+  build_status: 'Done'    # set automatically when the PR is merged
   poll_interval_min: 10
 
 claude:
@@ -32,6 +32,7 @@ claude:
     S: 50
     M: 60
     L: 80
+  max_repair_attempts: 3  # gate → repair loop retries before giving up
   budget_usd_per_build: 8
   budget_usd_per_day: 20
 
@@ -47,3 +48,13 @@ prompts:
 
 idea_pool: 'idea-pool.yaml'
 runs_dir: 'runs'
+scaffold_dir: 'scaffold'             # local scaffold directory (populated by `extctl scaffold fetch`)
+delivered_yaml: 'runs/delivered.yaml' # pre-pipeline manually-built extensions (dedup guard)
+
+scaffold:
+  source: 'https://github.com/owncloud/web-app-skeleton'
+  # Files/dirs from the skeleton to skip when fetching. Paths ending in /
+  # match the whole directory tree. The defaults already exclude CI/CD infra,
+  # community docs, pnpm-lock.yaml, and extctl-owned template files (src/,
+  # package.json, vite.config.ts). Override here to add or remove entries.
+  exclude: []  # empty = use built-in defaults

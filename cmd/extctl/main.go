@@ -6,8 +6,16 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"path/filepath"
+	"time"
+
+	"github.com/LukasHirt/extctl/internal/build"
 	"github.com/LukasHirt/extctl/internal/config"
+	"github.com/LukasHirt/extctl/internal/gate"
 	"github.com/LukasHirt/extctl/internal/gen"
+	gitpkg "github.com/LukasHirt/extctl/internal/git"
+	"github.com/LukasHirt/extctl/internal/poll"
+	scaffoldpkg "github.com/LukasHirt/extctl/internal/scaffold"
 	"github.com/LukasHirt/extctl/internal/state"
 )
 
@@ -156,6 +164,176 @@ var slateCarryoversCmd = &cobra.Command{
 	},
 }
 
+// --- poll command ---
+
+var pollDryRun bool
+
+var pollCmd = &cobra.Command{
+	Use:   "poll",
+	Short: "Poll Jira for a candidate pick and trigger the build if found",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		result, err := poll.Run(poll.Options{
+			Config: cfg,
+			DryRun: pollDryRun,
+		})
+		if err != nil {
+			return err
+		}
+		if result.NoPick {
+			return nil
+		}
+		if result.Picked != nil {
+			fmt.Printf("\nPicked: %s — %s\n  %s\n", result.Picked.JiraKey, result.Picked.Title, result.Picked.JiraURL)
+		}
+		return nil
+	},
+}
+
+// --- build command ---
+
+var buildCmd = &cobra.Command{
+	Use:   "build <candidate-id>",
+	Short: "Force-build a picked candidate (worktree → claude → gate → PR)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		candidateID := args[0]
+
+		loc, err := time.LoadLocation(cfg.Timezone)
+		if err != nil {
+			return fmt.Errorf("load timezone: %w", err)
+		}
+		date := time.Now().In(loc).Format("2006-01-02")
+
+		// Look up the candidate from the latest slate.
+		slates, err := state.LoadAll(cfg.RunsDir)
+		if err != nil {
+			return fmt.Errorf("load slates: %w", err)
+		}
+		var candidate *state.Candidate
+		for i := len(slates) - 1; i >= 0; i-- {
+			for j := range slates[i].Candidates {
+				c := &slates[i].Candidates[j]
+				if c.ID == candidateID || c.JiraKey == candidateID {
+					candidate = c
+					date = slates[i].Date
+					break
+				}
+			}
+			if candidate != nil {
+				break
+			}
+		}
+		if candidate == nil {
+			return fmt.Errorf("candidate %q not found in any slate", candidateID)
+		}
+
+		jiraToken, err := config.JiraToken()
+		if err != nil {
+			return err
+		}
+		jiraEmail, err := config.JiraEmail()
+		if err != nil {
+			return err
+		}
+
+		branch := fmt.Sprintf("ext/%s-%s", date, candidate.ID)
+		worktreePath := filepath.Join(cfg.RunsDir, date, candidate.ID, "worktree")
+
+		if err := gitpkg.FetchOrigin(cfg.TargetRepo.Checkout); err != nil {
+			return fmt.Errorf("git fetch: %w", err)
+		}
+		baseBranch := "origin/" + cfg.DefaultBranch
+		if err := gitpkg.CreateWorktree(cfg.TargetRepo.Checkout, worktreePath, branch, baseBranch); err != nil {
+			return fmt.Errorf("create worktree: %w", err)
+		}
+
+		result, err := build.Run(build.Options{
+			Config:       cfg,
+			CandidateID:  candidate.ID,
+			JiraKey:      candidate.JiraKey,
+			SpecMD:       candidate.SpecMD,
+			Effort:       candidate.Effort,
+			Date:         date,
+			WorktreePath: worktreePath,
+		})
+		if err != nil {
+			return err
+		}
+
+		// Use the same jira client that poll.Run would use (just for the build cmd).
+		_ = jiraToken
+		_ = jiraEmail
+		fmt.Printf("\nbuild done: cost $%.4f · turns %d · session %s\n",
+			result.CostUSD, result.Turns, result.SessionID)
+		fmt.Printf("result: %s\n",
+			filepath.Join(cfg.RunsDir, date, candidate.ID, "result.json"))
+		return nil
+	},
+}
+
+// --- scaffold command ---
+
+var scaffoldCmd = &cobra.Command{
+	Use:   "scaffold",
+	Short: "Manage the extension scaffold template",
+}
+
+var scaffoldFetchCmd = &cobra.Command{
+	Use:     "fetch",
+	Aliases: []string{"init"},
+	Short:   "Fetch (or refresh) the scaffold from the skeleton repository",
+	Long: `Clones the configured skeleton repository, strips .git/, applies the
+exclusion list, and copies the result into the scaffold directory.
+Files already in scaffold/ that are not present in the skeleton (e.g.
+src/composables/useLLM.ts, tests/e2e/) are left untouched.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return scaffoldpkg.Fetch(scaffoldpkg.FetchOptions{
+			Source:  cfg.Scaffold.Source,
+			Exclude: cfg.Scaffold.Exclude,
+			DestDir: cfg.ScaffoldDir,
+		})
+	},
+}
+
+// --- gate command ---
+
+var gateCmd = &cobra.Command{
+	Use:   "gate <candidate-id>",
+	Short: "Run the gate on an existing worktree (for debugging)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		candidateID := args[0]
+
+		loc, _ := time.LoadLocation(cfg.Timezone)
+		date := time.Now().In(loc).Format("2006-01-02")
+
+		worktreePath := filepath.Join(cfg.RunsDir, date, candidateID, "worktree")
+		outputDir := filepath.Join(cfg.RunsDir, date, candidateID)
+		scriptPath, err := filepath.Abs("gate/run-gate.sh")
+		if err != nil {
+			return err
+		}
+
+		result, err := gate.Run(scriptPath, worktreePath, candidateID, outputDir, 1)
+		if err != nil {
+			return err
+		}
+		if result.Passed {
+			fmt.Printf("gate PASSED (score %.2f)\n", result.Score)
+		} else {
+			fmt.Printf("gate FAILED\n")
+			fmt.Printf("stages: hygiene=%s build=%s lint=%s unit=%s\n",
+				result.Stages.Hygiene, result.Stages.Build,
+				result.Stages.Lint, result.Stages.Unit)
+			gateLog, _ := gate.ReadLog(outputDir)
+			if gateLog != "" {
+				fmt.Printf("\ngate.log:\n%s\n", gateLog)
+			}
+		}
+		return nil
+	},
+}
+
 // --- version command ---
 
 var version = "dev"
@@ -185,8 +363,12 @@ func init() {
 
 	slateCarryoversCmd.Flags().String("format", "", "output format: dedup-hint")
 
+	pollCmd.Flags().BoolVar(&pollDryRun, "dry-run", false,
+		"print what would happen without touching Jira or state")
+
 	slateCmd.AddCommand(slateStatusCmd, slateCarryoversCmd)
-	rootCmd.AddCommand(genCmd, slateCmd, versionCmd)
+	scaffoldCmd.AddCommand(scaffoldFetchCmd)
+	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, buildCmd, gateCmd, scaffoldCmd, versionCmd)
 }
 
 func main() {
