@@ -270,6 +270,11 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 		case build.PhaseGated:
 			logf("build: gate already passed; going to publish\n")
 			return publish(opts, date, candidate, bs, false, jiraClient)
+		case build.PhaseGating, build.PhaseRepairing:
+			worktreePath := filepath.Join(runsDir, date, candidate.ID, "worktree")
+			outputDir := filepath.Join(runsDir, date, candidate.ID)
+			logf("build: resuming from %s (session %s, attempts %d)…\n", bs.Phase, bs.SessionID, bs.Attempts)
+			return gateRepairPublish(opts, date, candidate, bs, worktreePath, outputDir, bs.SessionID, jiraClient)
 		}
 		logf("build: in phase %s; restarting build\n", bs.Phase)
 	}
@@ -345,7 +350,18 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 	bs.Phase = build.PhaseGating
 	_ = build.SaveState(runsDir, bs)
 
-	// Run gate → repair loop.
+	return gateRepairPublish(opts, date, candidate, bs, worktreePath, outputDir, sessionID, jiraClient)
+}
+
+// gateRepairPublish runs the gate → repair loop → publish tail.
+// Called both after a fresh build.Run and when resuming a PhaseGating/PhaseRepairing build.
+func gateRepairPublish(opts Options, date string, candidate state.Candidate, bs *build.State, worktreePath, outputDir, sessionID string, jiraClient *jira.Client) error {
+	runsDir := opts.Config.RunsDir
+	logf := func(format string, args ...any) {
+		fmt.Printf("["+candidate.ID+"] "+format, args...)
+	}
+	logPrefix := "[" + candidate.ID + "] "
+
 	gateResult, err := runGate(opts, worktreePath, candidate.ID, outputDir, candidate.SpecMD)
 	if err != nil {
 		return fmt.Errorf("gate: %w", err)
@@ -359,7 +375,6 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 
 	for !gateResult.Passed {
 		if bs.Attempts > maxRepairs {
-			// All repair attempts exhausted: push a draft PR and comment with details.
 			return publishBlocked(opts, date, candidate, bs, gateResult, outputDir, jiraClient,
 				fmt.Sprintf("gate failed after %d repair attempt(s)", bs.Attempts-1))
 		}
