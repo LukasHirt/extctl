@@ -167,6 +167,7 @@ var slateCarryoversCmd = &cobra.Command{
 // --- poll command ---
 
 var pollDryRun bool
+var pollDate string
 
 var pollCmd = &cobra.Command{
 	Use:   "poll",
@@ -175,6 +176,7 @@ var pollCmd = &cobra.Command{
 		result, err := poll.Run(poll.Options{
 			Config: cfg,
 			DryRun: pollDryRun,
+			Date:   pollDate,
 		})
 		if err != nil {
 			return err
@@ -365,6 +367,8 @@ func init() {
 
 	pollCmd.Flags().BoolVar(&pollDryRun, "dry-run", false,
 		"print what would happen without touching Jira or state")
+	pollCmd.Flags().StringVar(&pollDate, "date", "",
+		"date to poll for in YYYY-MM-DD format (default: today)")
 
 	slateCmd.AddCommand(slateStatusCmd, slateCarryoversCmd)
 	scaffoldCmd.AddCommand(scaffoldFetchCmd)
