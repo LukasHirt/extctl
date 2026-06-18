@@ -41,12 +41,10 @@ type Jira struct {
 }
 
 type Claude struct {
-	VersionPin        string         `yaml:"version_pin"`
-	SpecGenMaxTurns   int            `yaml:"spec_gen_max_turns"`
-	BuildMaxTurns     map[string]int `yaml:"build_max_turns"`
-	MaxRepairAttempts int            `yaml:"max_repair_attempts"`
-	BudgetUSDPerBuild float64        `yaml:"budget_usd_per_build"`
-	BudgetUSDPerDay   float64        `yaml:"budget_usd_per_day"`
+	VersionPin        string  `yaml:"version_pin"`
+	MaxRepairAttempts int     `yaml:"max_repair_attempts"`
+	BudgetUSDPerBuild float64 `yaml:"budget_usd_per_build"`
+	BudgetUSDPerDay   float64 `yaml:"budget_usd_per_day"`
 }
 
 type Decay struct {
@@ -57,7 +55,6 @@ type Decay struct {
 type Prompts struct {
 	GenSpecs string `yaml:"gen_specs"`
 	Build    string `yaml:"build"`
-	Continue string `yaml:"continue"`
 	Repair   string `yaml:"repair"`
 	Revise   string `yaml:"revise"`
 }
@@ -98,12 +95,6 @@ func (c *Config) applyDefaults() {
 	if c.Jira.PollIntervalMin == 0 {
 		c.Jira.PollIntervalMin = 10
 	}
-	if c.Claude.SpecGenMaxTurns == 0 {
-		c.Claude.SpecGenMaxTurns = 20
-	}
-	if len(c.Claude.BuildMaxTurns) == 0 {
-		c.Claude.BuildMaxTurns = map[string]int{"S": 50, "M": 60, "L": 80}
-	}
 	if c.Claude.MaxRepairAttempts == 0 {
 		c.Claude.MaxRepairAttempts = 3
 	}
@@ -124,9 +115,6 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Prompts.Build == "" {
 		c.Prompts.Build = "prompts/build-extension.md"
-	}
-	if c.Prompts.Continue == "" {
-		c.Prompts.Continue = "prompts/continue-build.md"
 	}
 	if c.Prompts.Repair == "" {
 		c.Prompts.Repair = "prompts/repair.md"

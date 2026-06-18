@@ -32,13 +32,12 @@ func (opts Options) logf(format string, args ...any) {
 
 // RunResult is what Run returns to the caller.
 type RunResult struct {
-	SessionID      string
-	CostUSD        float64
-	Turns          int
-	Attempts       int
-	Success        bool
-	MaxTurnsReached bool
-	ErrorMsg       string
+	SessionID string
+	CostUSD   float64
+	Turns     int
+	Attempts  int
+	Success   bool
+	ErrorMsg  string
 }
 
 // Phase B tool allowlist per spec §8.2.
@@ -90,26 +89,18 @@ func Run(opts Options) (*RunResult, error) {
 		"{{EFFORT}}":    opts.Effort,
 	})
 
-	// 4. Determine max turns from effort.
-	maxTurns := opts.Config.Claude.BuildMaxTurns[opts.Effort]
-	if maxTurns == 0 {
-		maxTurns = opts.Config.Claude.BuildMaxTurns["M"] // fallback
-	}
-
-	// 5. Archive path.
+	// 4. Archive path.
 	outputFile := filepath.Join(opts.Config.RunsDir, opts.Date, opts.CandidateID, "result.json")
 
 	claudeOpts := claude.RunOptions{
 		Prompt:       prompt,
 		AllowedTools: buildTools,
-		MaxTurns:     maxTurns,
 		Model:        opts.Config.Claude.VersionPin,
 		WorkDir:      opts.WorktreePath,
 		OutputFile:   outputFile,
 	}
 
-	opts.logf("build: running claude (max %d turns, effort %s, workdir %s)…\n",
-		maxTurns, opts.Effort, opts.WorktreePath)
+	opts.logf("build: running claude (effort %s, workdir %s)…\n", opts.Effort, opts.WorktreePath)
 
 	result, err := claude.Run(claudeOpts)
 	if err != nil {
@@ -120,18 +111,12 @@ func Run(opts Options) (*RunResult, error) {
 		}, fmt.Errorf("claude build run: %w", err)
 	}
 
-	maxTurnsReached := result.Subtype == "error_max_turns"
-	if maxTurnsReached {
-		opts.logf("build: claude hit max turns (%d) — continuation pass will follow\n", result.NumTurns)
-	}
-
 	return &RunResult{
-		SessionID:       result.SessionID,
-		CostUSD:         result.TotalCostUSD,
-		Turns:           result.NumTurns,
-		Attempts:        1,
-		Success:         true,
-		MaxTurnsReached: maxTurnsReached,
+		SessionID: result.SessionID,
+		CostUSD:   result.TotalCostUSD,
+		Turns:     result.NumTurns,
+		Attempts:  1,
+		Success:   true,
 	}, nil
 }
 
@@ -152,14 +137,13 @@ func Repair(opts Options, gateLog string, sessionID string) (*RunResult, error) 
 	claudeOpts := claude.RunOptions{
 		Prompt:       prompt,
 		AllowedTools: buildTools,
-		MaxTurns:     25,
 		Model:        opts.Config.Claude.VersionPin,
 		WorkDir:      opts.WorktreePath,
 		OutputFile:   outputFile,
 		Resume:       sessionID,
 	}
 
-	opts.logf("build: running repair (max 25 turns, resuming session %s)…\n", sessionID)
+	opts.logf("build: running repair (resuming session %s)…\n", sessionID)
 
 	result, err := claude.Run(claudeOpts)
 	if err != nil {
@@ -176,50 +160,6 @@ func Repair(opts Options, gateLog string, sessionID string) (*RunResult, error) 
 		CostUSD:   result.TotalCostUSD,
 		Turns:     result.NumTurns,
 		Attempts:  2,
-		Success:   true,
-	}, nil
-}
-
-// Continue runs a single continuation pass when the initial build hit the max
-// turn limit. It resumes the same Claude session with a "finish up" prompt so
-// Claude can complete any unfinished code, run the checks, and commit.
-func Continue(opts Options, sessionID string) (*RunResult, error) {
-	promptPath := opts.Config.Prompts.Continue
-	promptBytes, err := os.ReadFile(promptPath)
-	if err != nil {
-		return nil, fmt.Errorf("read continue prompt %s: %w", promptPath, err)
-	}
-	prompt := renderTemplate(string(promptBytes), map[string]string{
-		"{{EXT_ID}}": opts.CandidateID,
-	})
-
-	outputFile := filepath.Join(opts.Config.RunsDir, opts.Date, opts.CandidateID, "continue.json")
-
-	claudeOpts := claude.RunOptions{
-		Prompt:       prompt,
-		AllowedTools: buildTools,
-		MaxTurns:     30,
-		Model:        opts.Config.Claude.VersionPin,
-		WorkDir:      opts.WorktreePath,
-		OutputFile:   outputFile,
-		Resume:       sessionID,
-	}
-
-	opts.logf("build: running continuation (max 30 turns, resuming session %s)…\n", sessionID)
-
-	result, err := claude.Run(claudeOpts)
-	if err != nil {
-		return &RunResult{
-			Success:   false,
-			ErrorMsg:  err.Error(),
-			SessionID: sessionID,
-		}, fmt.Errorf("claude continue run: %w", err)
-	}
-
-	return &RunResult{
-		SessionID: result.SessionID,
-		CostUSD:   result.TotalCostUSD,
-		Turns:     result.NumTurns,
 		Success:   true,
 	}, nil
 }

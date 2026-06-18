@@ -23,7 +23,6 @@ type Result struct {
 type RunOptions struct {
 	Prompt       string
 	AllowedTools []string
-	MaxTurns     int
 	Model        string // optional; defaults to claude's own default
 	WorkDir      string // working directory for the subprocess
 	OutputFile   string // path to write the raw JSON result
@@ -37,9 +36,6 @@ func Run(opts RunOptions) (*Result, error) {
 
 	if len(opts.AllowedTools) > 0 {
 		args = append(args, "--allowedTools", strings.Join(opts.AllowedTools, ","))
-	}
-	if opts.MaxTurns > 0 {
-		args = append(args, "--max-turns", fmt.Sprintf("%d", opts.MaxTurns))
 	}
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
@@ -58,18 +54,6 @@ func Run(opts RunOptions) (*Result, error) {
 
 	out, err := cmd.Output()
 	if err != nil {
-		// Claude exits non-zero on error_max_turns but stdout still contains
-		// valid JSON with real work in the worktree — parse before giving up.
-		if len(out) > 0 {
-			var partial Result
-			if jsonErr := json.Unmarshal(out, &partial); jsonErr == nil && partial.Subtype == "error_max_turns" {
-				if opts.OutputFile != "" {
-					_ = os.MkdirAll(filepath.Dir(opts.OutputFile), 0o755)
-					_ = os.WriteFile(opts.OutputFile, out, 0o644)
-				}
-				return &partial, nil
-			}
-		}
 		stderr := ""
 		if ee, ok := err.(*exec.ExitError); ok {
 			stderr = string(ee.Stderr)
