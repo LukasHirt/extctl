@@ -11,11 +11,12 @@ import (
 
 // Result is the subset of claude --output-format json we care about.
 type Result struct {
-	Result      string  `json:"result"`
-	SessionID   string  `json:"session_id"`
+	Result       string  `json:"result"`
+	Subtype      string  `json:"subtype"`
+	SessionID    string  `json:"session_id"`
 	TotalCostUSD float64 `json:"total_cost_usd"`
-	NumTurns    int     `json:"num_turns"`
-	IsError     bool    `json:"is_error"`
+	NumTurns     int     `json:"num_turns"`
+	IsError      bool    `json:"is_error"`
 }
 
 // RunOptions configures a headless claude -p invocation.
@@ -57,13 +58,23 @@ func Run(opts RunOptions) (*Result, error) {
 
 	out, err := cmd.Output()
 	if err != nil {
-		var exitErr *exec.ExitError
+		// Claude exits non-zero on error_max_turns but stdout still contains
+		// valid JSON with real work in the worktree — parse before giving up.
+		if len(out) > 0 {
+			var partial Result
+			if jsonErr := json.Unmarshal(out, &partial); jsonErr == nil && partial.Subtype == "error_max_turns" {
+				if opts.OutputFile != "" {
+					_ = os.MkdirAll(filepath.Dir(opts.OutputFile), 0o755)
+					_ = os.WriteFile(opts.OutputFile, out, 0o644)
+				}
+				return &partial, nil
+			}
+		}
 		stderr := ""
 		if ee, ok := err.(*exec.ExitError); ok {
-			exitErr = ee
-			stderr = string(exitErr.Stderr)
+			stderr = string(ee.Stderr)
 		}
-		return nil, fmt.Errorf("claude exited non-zero: %w\nstderr: %s", err, stderr)
+		return nil, fmt.Errorf("claude exited non-zero: %w\nstderr: %s\nstdout: %s", err, stderr, truncate(string(out), 1000))
 	}
 
 	if opts.OutputFile != "" {

@@ -7,13 +7,13 @@ candidate generation for ownCloud. Every workday it:
 
 1. **Phase A (morning):** generates 3 agentic extension specs via Claude Code
    headless, creates Jira issues for human review.
-2. **Phase B (event-driven):** polls Jira for a pick, builds the chosen
-   extension into a reviewable GitHub PR using Claude Code headless + a
-   validation gate.
+2. **Phase B (event-driven):** polls Jira for picks, builds all chosen
+   extensions concurrently into reviewable GitHub PRs using Claude Code
+   headless + a validation gate.
 
-The contractual unit is **1 delivered extension per workday**, chosen by the
-ownCloud manager from 3 fresh candidates (plus any carryovers). Only Phase A
-is currently implemented. Phase B is next.
+The manager can pick one or more candidates (by moving them to "Doing" in
+Jira); all picked candidates are built concurrently. Phase A and Phase B are
+both implemented.
 
 ## Repo layout
 
@@ -93,10 +93,10 @@ with `{{N}}=1` substitution in the shell; this should be a first-class
 command.
 
 ### 3. Poll loop — `extctl poll`
-Polls Jira every N minutes during business hours. When it detects a
-candidate issue transitioned to the pick status ("Doing"), it:
-1. Transitions the other open candidates to decline status ("Not Doing")
-2. Creates a `git worktree` on `target_repo.checkout` for the picked branch
+Polls Jira every N minutes during business hours. When it detects one or more
+candidate issues transitioned to the pick status ("Doing"), it builds all of
+them concurrently (each in its own git worktree). For each picked candidate:
+1. Creates a `git worktree` on `target_repo.checkout` for the picked branch
 3. Copies scaffold + CLAUDE.md into `extensions/<id>/`
 4. Runs `claude -p` with `build-extension.md` prompt (Phase B)
 5. Runs the gate (`gate/run-gate.sh`)

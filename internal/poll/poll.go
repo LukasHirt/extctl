@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -180,11 +181,17 @@ func Run(opts Options) (*Result, error) {
 		return &Result{Date: date, Picked: allPicked}, nil
 	}
 
+	var wg sync.WaitGroup
 	for _, p := range allPicked {
-		if err := runBuild(opts, date, p, jiraClient); err != nil {
-			fmt.Printf("poll: build error for %s: %v\n", p.ID, err)
-		}
+		wg.Add(1)
+		go func(candidate state.Candidate) {
+			defer wg.Done()
+			if err := runBuild(opts, date, candidate, jiraClient); err != nil {
+				fmt.Printf("poll: build error for %s: %v\n", candidate.ID, err)
+			}
+		}(p)
 	}
+	wg.Wait()
 
 	return &Result{Date: date, Picked: allPicked}, nil
 }
@@ -231,13 +238,17 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 	if err != nil {
 		return fmt.Errorf("load build state: %w", err)
 	}
+	logf := func(format string, args ...any) {
+		fmt.Printf("["+candidate.ID+"] "+format, args...)
+	}
+
 	if bs != nil {
 		switch bs.Phase {
 		case build.PhaseDone:
-			fmt.Printf("build: %s already done (PR #%d)\n", candidate.ID, bs.PR.Number)
+			logf("build: already done (PR #%d)\n", bs.PR.Number)
 			return nil
 		case build.PhaseBlocked:
-			fmt.Printf("build: %s is blocked — skipping (manual intervention needed, see PR)\n", candidate.ID)
+			logf("build: blocked — skipping (manual intervention needed, see PR)\n")
 			return nil
 		}
 	}
@@ -248,7 +259,7 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 		return fmt.Errorf("acquire build lock: %w", err)
 	}
 	if !acquired {
-		fmt.Printf("build: %s is already building in another process — skipping\n", candidate.ID)
+		logf("build: already building in another process — skipping\n")
 		return nil
 	}
 	defer releaseLock(runsDir, date, candidate.ID)
@@ -256,10 +267,10 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 	if bs != nil {
 		switch bs.Phase {
 		case build.PhaseGated:
-			fmt.Printf("build: %s gate already passed; going to publish\n", candidate.ID)
+			logf("build: gate already passed; going to publish\n")
 			return publish(opts, date, candidate, bs, false, jiraClient)
 		}
-		fmt.Printf("build: %s in phase %s; restarting build\n", candidate.ID, bs.Phase)
+		logf("build: in phase %s; restarting build\n", bs.Phase)
 	}
 
 	// Check daily budget.
@@ -284,15 +295,17 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 
 	// Create git worktree.
 	repoPath := opts.Config.TargetRepo.Checkout
-	fmt.Printf("build: fetching origin in %s…\n", repoPath)
+	logf("build: fetching origin in %s…\n", repoPath)
 	if err := gitpkg.FetchOrigin(repoPath); err != nil {
 		return fmt.Errorf("git fetch origin: %w", err)
 	}
 	baseBranch := "origin/" + opts.Config.DefaultBranch
-	fmt.Printf("build: creating worktree %s on branch %s…\n", worktreePath, branch)
+	logf("build: creating worktree %s on branch %s…\n", worktreePath, branch)
 	if err := gitpkg.CreateWorktree(repoPath, worktreePath, branch, baseBranch); err != nil {
 		return fmt.Errorf("create worktree: %w", err)
 	}
+
+	logPrefix := "[" + candidate.ID + "] "
 
 	// Run Phase B build.
 	buildResult, err := build.Run(build.Options{
@@ -305,6 +318,7 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 		WorktreePath: worktreePath,
 		ScaffoldDir:  opts.ScaffoldDir,
 		ClaudeMDPath: opts.ClaudeMDPath,
+		LogPrefix:    logPrefix,
 	})
 	if err != nil {
 		bs.Phase = build.PhaseBlocked
@@ -318,6 +332,32 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 	bs.CostUSD = buildResult.CostUSD
 	bs.Turns = buildResult.Turns
 	bs.Attempts = buildResult.Attempts
+
+	// If Claude hit the turn limit, run a continuation pass before gating.
+	if buildResult.MaxTurnsReached {
+		bs.Phase = build.PhaseContinuing
+		_ = build.SaveState(runsDir, bs)
+
+		continueResult, continueErr := build.Continue(build.Options{
+			Config:       opts.Config,
+			CandidateID:  candidate.ID,
+			JiraKey:      candidate.JiraKey,
+			SpecMD:       candidate.SpecMD,
+			Effort:       candidate.Effort,
+			Date:         date,
+			WorktreePath: worktreePath,
+			LogPrefix:    logPrefix,
+		}, sessionID)
+		if continueErr != nil {
+			logf("build: continuation failed (%v) — proceeding to gate with partial output\n", continueErr)
+		} else {
+			sessionID = continueResult.SessionID
+			bs.SessionID = sessionID
+			bs.CostUSD += continueResult.CostUSD
+			bs.Turns += continueResult.Turns
+		}
+	}
+
 	bs.Phase = build.PhaseGating
 	_ = build.SaveState(runsDir, bs)
 
@@ -339,7 +379,7 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 			return publishBlocked(opts, date, candidate, bs, gateResult, outputDir, jiraClient)
 		}
 
-		fmt.Printf("build: gate failed (attempt %d/%d); running repair…\n", bs.Attempts, maxRepairs)
+		logf("build: gate failed (attempt %d/%d); running repair…\n", bs.Attempts, maxRepairs)
 		bs.Phase = build.PhaseRepairing
 		_ = build.SaveState(runsDir, bs)
 
@@ -352,6 +392,7 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 			Effort:       candidate.Effort,
 			Date:         date,
 			WorktreePath: worktreePath,
+			LogPrefix:    logPrefix,
 		}, gateLog, sessionID)
 		if repairErr != nil {
 			return fmt.Errorf("repair attempt %d: %w", bs.Attempts, repairErr)
@@ -380,6 +421,9 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 
 // publish pushes the branch and opens a ready-for-review PR.
 func publish(opts Options, date string, candidate state.Candidate, bs *build.State, isDraft bool, jiraClient *jira.Client) error {
+	logf := func(format string, args ...any) {
+		fmt.Printf("["+candidate.ID+"] "+format, args...)
+	}
 	runsDir := opts.Config.RunsDir
 	repoPath := opts.Config.TargetRepo.Checkout
 	worktreePath := filepath.Join(runsDir, date, candidate.ID, "worktree")
@@ -387,7 +431,7 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 	bs.Phase = build.PhasePublishing
 	_ = build.SaveState(runsDir, bs)
 
-	fmt.Printf("build: pushing branch %s…\n", bs.Branch)
+	logf("build: pushing branch %s…\n", bs.Branch)
 	if err := gitpkg.PushBranch(repoPath, bs.Branch); err != nil {
 		return fmt.Errorf("push branch: %w", err)
 	}
@@ -406,7 +450,7 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 		bs.Attempts,
 	)
 
-	fmt.Printf("build: opening PR on %s…\n", opts.Config.TargetRepo.Remote)
+	logf("build: opening PR on %s…\n", opts.Config.TargetRepo.Remote)
 	pr, err := githubpkg.Create(githubpkg.PROptions{
 		RepoSlug: opts.Config.TargetRepo.Remote,
 		Branch:   bs.Branch,
@@ -427,14 +471,14 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 	comment := fmt.Sprintf("PR opened: %s\n\nGate score: %.2f | Cost: $%.2f | Turns: %d | Attempts: %d",
 		pr.URL, gateScore, bs.CostUSD, bs.Turns, bs.Attempts)
 	if addErr := jiraClient.AddComment(candidate.JiraKey, comment); addErr != nil {
-		fmt.Printf("build: warning: could not comment on Jira issue: %v\n", addErr)
+		logf("build: warning: could not comment on Jira issue: %v\n", addErr)
 	}
 
-	fmt.Printf("build: done — PR #%d: %s\n", pr.Number, pr.URL)
+	logf("build: done — PR #%d: %s\n", pr.Number, pr.URL)
 
 	// Clean up worktree only on success.
 	if err := gitpkg.RemoveWorktree(repoPath, worktreePath); err != nil {
-		fmt.Printf("build: warning: could not remove worktree: %v\n", err)
+		logf("build: warning: could not remove worktree: %v\n", err)
 	}
 
 	return nil
@@ -444,6 +488,9 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 // the failure details. The Jira issue is left in Doing — a developer or
 // manager reviews the PR and decides what to do next.
 func publishBlocked(opts Options, date string, candidate state.Candidate, bs *build.State, gateResult *gate.Result, outputDir string, jiraClient *jira.Client) error {
+	logf := func(format string, args ...any) {
+		fmt.Printf("["+candidate.ID+"] "+format, args...)
+	}
 	runsDir := opts.Config.RunsDir
 	repoPath := opts.Config.TargetRepo.Checkout
 
@@ -451,7 +498,7 @@ func publishBlocked(opts Options, date string, candidate state.Candidate, bs *bu
 	bs.ErrorMsg = fmt.Sprintf("gate failed after %d repair attempt(s)", bs.Attempts-1)
 	_ = build.SaveState(runsDir, bs)
 
-	fmt.Printf("build: %s exhausted repairs; pushing draft PR for manual review…\n", candidate.ID)
+	logf("build: exhausted repairs; pushing draft PR for manual review…\n")
 
 	if err := gitpkg.PushBranch(repoPath, bs.Branch); err != nil {
 		return fmt.Errorf("push blocked branch: %w", err)
@@ -495,11 +542,11 @@ func publishBlocked(opts Options, date string, candidate state.Candidate, bs *bu
 		truncate(gateLog, 3000),
 	)
 	if err := githubpkg.AddComment(opts.Config.TargetRepo.Remote, pr.Number, failComment); err != nil {
-		fmt.Printf("build: warning: could not comment on draft PR: %v\n", err)
+		logf("build: warning: could not comment on draft PR: %v\n", err)
 	}
 
-	fmt.Printf("build: draft PR #%d opened for manual review: %s\n", pr.Number, pr.URL)
-	fmt.Printf("build: Jira issue %s left in Doing — transition manually after fix\n", candidate.JiraKey)
+	logf("build: draft PR #%d opened for manual review: %s\n", pr.Number, pr.URL)
+	logf("build: Jira issue %s left in Doing — transition manually after fix\n", candidate.JiraKey)
 	return nil
 }
 
