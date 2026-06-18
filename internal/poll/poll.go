@@ -1,10 +1,12 @@
 package poll
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/LukasHirt/extctl/internal/build"
@@ -135,44 +137,56 @@ func Run(opts Options) (*Result, error) {
 		}
 	}
 
-	if len(picked) == 0 {
+	// Update slate: mark newly-picked candidates.
+	if len(picked) > 0 {
+		pickedKeys := make(map[string]bool, len(picked))
+		for _, p := range picked {
+			pickedKeys[p.JiraKey] = true
+		}
+		updatedCandidates := make([]state.Candidate, len(slate.Candidates))
+		copy(updatedCandidates, slate.Candidates)
+		for i := range updatedCandidates {
+			if pickedKeys[updatedCandidates[i].JiraKey] {
+				updatedCandidates[i].Status = state.StatusPicked
+			}
+		}
+		slate.Candidates = updatedCandidates
+		if err := state.Save(opts.Config.RunsDir, slate); err != nil {
+			return nil, fmt.Errorf("save slate: %w", err)
+		}
+		for _, p := range picked {
+			fmt.Printf("poll: picked %s (%s)\n", p.ID, p.JiraKey)
+		}
+	}
+
+	// Collect all picked candidates (including ones picked in earlier runs).
+	var allPicked []state.Candidate
+	for _, c := range slate.Candidates {
+		if c.Status == state.StatusPicked {
+			allPicked = append(allPicked, c)
+		}
+	}
+
+	if len(allPicked) == 0 {
 		fmt.Printf("poll: no action for %s — candidates still awaiting approval\n", date)
 		return &Result{Date: date, NoPick: true}, nil
 	}
 
 	// Dry-run: show what would happen without side-effects.
 	if opts.DryRun {
-		for _, p := range picked {
-			fmt.Printf("dry-run: would pick %s (%s) and start build\n", p.ID, p.JiraKey)
+		for _, p := range allPicked {
+			fmt.Printf("dry-run: would build %s (%s)\n", p.ID, p.JiraKey)
 		}
-		return &Result{Date: date, Picked: picked}, nil
+		return &Result{Date: date, Picked: allPicked}, nil
 	}
 
-	// Update slate: mark all picked candidates locally.
-	pickedKeys := make(map[string]bool, len(picked))
-	for _, p := range picked {
-		pickedKeys[p.JiraKey] = true
-	}
-	updatedCandidates := make([]state.Candidate, len(slate.Candidates))
-	copy(updatedCandidates, slate.Candidates)
-	for i := range updatedCandidates {
-		if pickedKeys[updatedCandidates[i].JiraKey] {
-			updatedCandidates[i].Status = state.StatusPicked
-		}
-	}
-	slate.Candidates = updatedCandidates
-	if err := state.Save(opts.Config.RunsDir, slate); err != nil {
-		return nil, fmt.Errorf("save slate: %w", err)
-	}
-
-	for _, p := range picked {
-		fmt.Printf("poll: picked %s (%s)\n", p.ID, p.JiraKey)
+	for _, p := range allPicked {
 		if err := runBuild(opts, date, p, jiraClient); err != nil {
 			fmt.Printf("poll: build error for %s: %v\n", p.ID, err)
 		}
 	}
 
-	return &Result{Date: date, Picked: picked}, nil
+	return &Result{Date: date, Picked: allPicked}, nil
 }
 
 // checkMergedPRs looks for any candidates whose PR has been merged and
@@ -225,6 +239,22 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 		case build.PhaseBlocked:
 			fmt.Printf("build: %s is blocked — skipping (manual intervention needed, see PR)\n", candidate.ID)
 			return nil
+		}
+	}
+
+	// Acquire a PID lock so concurrent poll invocations don't double-build.
+	acquired, err := acquireLock(runsDir, date, candidate.ID)
+	if err != nil {
+		return fmt.Errorf("acquire build lock: %w", err)
+	}
+	if !acquired {
+		fmt.Printf("build: %s is already building in another process — skipping\n", candidate.ID)
+		return nil
+	}
+	defer releaseLock(runsDir, date, candidate.ID)
+
+	if bs != nil {
+		switch bs.Phase {
 		case build.PhaseGated:
 			fmt.Printf("build: %s gate already passed; going to publish\n", candidate.ID)
 			return publish(opts, date, candidate, bs, false, jiraClient)
@@ -540,4 +570,53 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+func lockFilePath(runsDir, date, id string) string {
+	return filepath.Join(runsDir, date, id, "build.lock")
+}
+
+// acquireLock writes a PID lock file for the build. Returns true if the lock
+// was acquired. Returns false (no error) if another live process holds the
+// lock. Stale locks from dead processes are removed automatically.
+func acquireLock(runsDir, date, id string) (bool, error) {
+	path := lockFilePath(runsDir, date, id)
+
+	data, err := os.ReadFile(path)
+	if err == nil {
+		var pid int
+		if _, scanErr := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &pid); scanErr == nil {
+			if isProcessAlive(pid) {
+				return false, nil
+			}
+			fmt.Printf("build: removing stale lock for %s (pid %d is gone)\n", id, pid)
+			_ = os.Remove(path)
+		}
+	} else if !os.IsNotExist(err) {
+		return false, fmt.Errorf("read build lock: %w", err)
+	}
+
+	dir := filepath.Join(runsDir, date, id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return false, fmt.Errorf("mkdir for build lock: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644); err != nil {
+		return false, fmt.Errorf("write build lock: %w", err)
+	}
+	return true, nil
+}
+
+func releaseLock(runsDir, date, id string) {
+	_ = os.Remove(lockFilePath(runsDir, date, id))
+}
+
+// isProcessAlive returns true if a process with the given PID is running.
+// EPERM means the process exists but we can't signal it — still alive.
+func isProcessAlive(pid int) bool {
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = p.Signal(syscall.Signal(0))
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
