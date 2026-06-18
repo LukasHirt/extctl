@@ -28,10 +28,9 @@ type Options struct {
 
 // Result summarises what the poll pass found and did.
 type Result struct {
-	Date     string
-	Picked   *state.Candidate // nil if no pick detected
-	Declined []state.Candidate
-	NoPick   bool // true when no candidate was in pick status
+	Date   string
+	Picked []state.Candidate
+	NoPick bool // true when no candidate was in pick status
 }
 
 // Run executes one poll pass:
@@ -110,7 +109,7 @@ func Run(opts Options) (*Result, error) {
 		}
 	}
 
-	var picked *state.Candidate
+	var picked []state.Candidate
 
 	if len(openKeys) > 0 {
 		jql := fmt.Sprintf("issueKey in (%s)", strings.Join(openKeys, ","))
@@ -131,31 +130,33 @@ func Run(opts Options) (*Result, error) {
 				continue
 			}
 			if status == opts.Config.Jira.PickStatus {
-				if picked != nil {
-					fmt.Printf("poll: warning: multiple picked candidates; ignoring %s\n", c.JiraKey)
-					continue
-				}
-				picked = c
+				picked = append(picked, *c)
 			}
 		}
 	}
 
-	if picked == nil {
+	if len(picked) == 0 {
 		fmt.Printf("poll: no action for %s — candidates still awaiting approval\n", date)
 		return &Result{Date: date, NoPick: true}, nil
 	}
 
 	// Dry-run: show what would happen without side-effects.
 	if opts.DryRun {
-		fmt.Printf("dry-run: would pick %s (%s) and start build\n", picked.ID, picked.JiraKey)
+		for _, p := range picked {
+			fmt.Printf("dry-run: would pick %s (%s) and start build\n", p.ID, p.JiraKey)
+		}
 		return &Result{Date: date, Picked: picked}, nil
 	}
 
-	// Update slate: mark the picked candidate locally.
+	// Update slate: mark all picked candidates locally.
+	pickedKeys := make(map[string]bool, len(picked))
+	for _, p := range picked {
+		pickedKeys[p.JiraKey] = true
+	}
 	updatedCandidates := make([]state.Candidate, len(slate.Candidates))
 	copy(updatedCandidates, slate.Candidates)
 	for i := range updatedCandidates {
-		if updatedCandidates[i].JiraKey == picked.JiraKey {
+		if pickedKeys[updatedCandidates[i].JiraKey] {
 			updatedCandidates[i].Status = state.StatusPicked
 		}
 	}
@@ -164,9 +165,11 @@ func Run(opts Options) (*Result, error) {
 		return nil, fmt.Errorf("save slate: %w", err)
 	}
 
-	fmt.Printf("poll: picked %s (%s)\n", picked.ID, picked.JiraKey)
-	if err := runBuild(opts, date, *picked, jiraClient); err != nil {
-		fmt.Printf("poll: build error: %v\n", err)
+	for _, p := range picked {
+		fmt.Printf("poll: picked %s (%s)\n", p.ID, p.JiraKey)
+		if err := runBuild(opts, date, p, jiraClient); err != nil {
+			fmt.Printf("poll: build error for %s: %v\n", p.ID, err)
+		}
 	}
 
 	return &Result{Date: date, Picked: picked}, nil
