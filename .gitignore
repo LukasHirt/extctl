@@ -1,0 +1,20 @@
+# Build output
+extctl
+dist/
+
+# Config (contains org-specific URLs and project keys)
+extctl.yaml
+
+# Runtime state — local to the machine, never shared
+runs/20*/
+runs/delivered.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
