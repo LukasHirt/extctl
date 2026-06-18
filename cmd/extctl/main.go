@@ -182,8 +182,8 @@ var pollCmd = &cobra.Command{
 		if result.NoPick {
 			return nil
 		}
-		if result.Picked != nil {
-			fmt.Printf("\nPicked: %s — %s\n  %s\n", result.Picked.JiraKey, result.Picked.Title, result.Picked.JiraURL)
+		for _, p := range result.Picked {
+			fmt.Printf("\nPicked: %s — %s\n  %s\n", p.JiraKey, p.Title, p.JiraURL)
 		}
 		return nil
 	},
