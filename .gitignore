@@ -1,9 +1,10 @@
 # Build output
-extctl
+/extctl
 dist/
 
 # Config (contains org-specific URLs and project keys)
 extctl.yaml
+.env
 
 # Runtime state — local to the machine, never shared
 runs/20*/

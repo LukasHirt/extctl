@@ -372,6 +372,9 @@ func init() {
 }
 
 func main() {
+	if err := config.LoadDotEnv(".env"); err != nil {
+		fmt.Fprintln(os.Stderr, "warning:", err)
+	}
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
