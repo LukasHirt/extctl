@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -267,6 +268,13 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
 	cfg.applyDefaults()
+	// RunsDir must be absolute: derived paths (plan.md, stages.md, etc.) are
+	// passed to Claude which runs in a different working directory (TargetRepo.Checkout).
+	absRunsDir, err := filepath.Abs(cfg.RunsDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve runs_dir: %w", err)
+	}
+	cfg.RunsDir = absRunsDir
 	return &cfg, nil
 }
 
