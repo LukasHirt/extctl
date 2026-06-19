@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/LukasHirt/extctl/internal/build"
+	"github.com/LukasHirt/extctl/internal/claude"
 	"github.com/LukasHirt/extctl/internal/config"
 	"github.com/LukasHirt/extctl/internal/gate"
 	githubpkg "github.com/LukasHirt/extctl/internal/github"
@@ -466,9 +467,16 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 	if bs.Gate != nil {
 		gateScore = bs.Gate.Score
 	}
+	whatWasBuilt := ""
+	if bs.TotalStages > 0 {
+		lastStageJSONL := filepath.Join(runsDir, date, candidate.ID, fmt.Sprintf("stage-%d.jsonl", bs.TotalStages))
+		if r, loadErr := claude.LoadResult(lastStageJSONL); loadErr == nil {
+			whatWasBuilt = r.Result
+		}
+	}
 	prBody := githubpkg.FormatBody(
 		candidate.SpecMD,
-		"",
+		whatWasBuilt,
 		candidate.JiraKey,
 		gateScore,
 		bs.CostUSD,
@@ -530,9 +538,16 @@ func publishBlocked(opts Options, date string, candidate state.Candidate, bs *bu
 		return fmt.Errorf("push blocked branch: %w", err)
 	}
 
+	whatWasBuilt := ""
+	if bs.TotalStages > 0 {
+		lastStageJSONL := filepath.Join(runsDir, date, candidate.ID, fmt.Sprintf("stage-%d.jsonl", bs.TotalStages))
+		if r, loadErr := claude.LoadResult(lastStageJSONL); loadErr == nil {
+			whatWasBuilt = r.Result
+		}
+	}
 	prBody := githubpkg.FormatBody(
 		candidate.SpecMD,
-		"",
+		whatWasBuilt,
 		candidate.JiraKey,
 		gateResult.Score,
 		bs.CostUSD,
