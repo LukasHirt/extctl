@@ -58,6 +58,7 @@ type Prompts struct {
 	Plan         string `yaml:"plan"`
 	DeriveStages string `yaml:"derive_stages"`
 	BuildStage   string `yaml:"build_stage"`
+	BuildSummary string `yaml:"build_summary"`
 	Repair       string `yaml:"repair"`
 	Revise       string `yaml:"revise"`
 }
@@ -124,6 +125,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Prompts.BuildStage == "" {
 		c.Prompts.BuildStage = "prompts/build-stage.md"
+	}
+	if c.Prompts.BuildSummary == "" {
+		c.Prompts.BuildSummary = "prompts/build-summary.md"
 	}
 	if c.Prompts.Repair == "" {
 		c.Prompts.Repair = "prompts/repair.md"

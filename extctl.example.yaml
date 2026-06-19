@@ -40,6 +40,7 @@ prompts:
   plan: 'prompts/plan-extension.md'
   derive_stages: 'prompts/derive-stages.md'
   build_stage: 'prompts/build-stage.md'
+  build_summary: 'prompts/build-summary.md'
   repair: 'prompts/repair.md'
   revise: 'prompts/revise.md'
 
