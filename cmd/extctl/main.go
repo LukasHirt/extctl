@@ -631,23 +631,33 @@ var approveStagesCmd = &cobra.Command{
 		}
 
 		gateScore := 0.0
+		gateHygiene, gateBuild, gateLint, gateUnit := "", "", "", ""
 		if bs.Gate != nil {
 			gateScore = bs.Gate.Score
+			gateHygiene = bs.Gate.Stages.Hygiene
+			gateBuild = bs.Gate.Stages.Build
+			gateLint = bs.Gate.Stages.Lint
+			gateUnit = bs.Gate.Stages.Unit
 		}
 		whatWasBuilt := ""
 		lastStageJSONL := filepath.Join(outputDir, fmt.Sprintf("stage-%d.jsonl", len(stages)))
 		if r, loadErr := claude.LoadResult(lastStageJSONL); loadErr == nil {
 			whatWasBuilt = r.Result
 		}
-		prBody := githubpkg.FormatBody(
-			candidate.SpecMD,
-			whatWasBuilt,
-			candidate.JiraKey,
-			gateScore,
-			bs.CostUSD,
-			bs.Turns,
-			bs.Attempts,
-		)
+		prBody := githubpkg.FormatBody(githubpkg.BodyOptions{
+			SpecMD:       candidate.SpecMD,
+			WhatWasBuilt: whatWasBuilt,
+			JiraKey:      candidate.JiraKey,
+			JiraURL:      candidate.JiraURL,
+			GateScore:    gateScore,
+			GateHygiene:  gateHygiene,
+			GateBuild:    gateBuild,
+			GateLint:     gateLint,
+			GateUnit:     gateUnit,
+			CostUSD:      bs.CostUSD,
+			Turns:        bs.Turns,
+			Attempts:     bs.Attempts,
+		})
 
 		fmt.Printf("[%s] opening PR on %s…\n", candidate.ID, cfg.TargetRepo.Remote)
 		pr, err := githubpkg.Create(githubpkg.PROptions{
