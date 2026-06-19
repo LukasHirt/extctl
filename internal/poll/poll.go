@@ -464,8 +464,13 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 	}
 
 	gateScore := 0.0
+	gateHygiene, gateBuild, gateLint, gateUnit := "", "", "", ""
 	if bs.Gate != nil {
 		gateScore = bs.Gate.Score
+		gateHygiene = bs.Gate.Stages.Hygiene
+		gateBuild = bs.Gate.Stages.Build
+		gateLint = bs.Gate.Stages.Lint
+		gateUnit = bs.Gate.Stages.Unit
 	}
 	whatWasBuilt := ""
 	if bs.TotalStages > 0 {
@@ -474,15 +479,20 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 			whatWasBuilt = r.Result
 		}
 	}
-	prBody := githubpkg.FormatBody(
-		candidate.SpecMD,
-		whatWasBuilt,
-		candidate.JiraKey,
-		gateScore,
-		bs.CostUSD,
-		bs.Turns,
-		bs.Attempts,
-	)
+	prBody := githubpkg.FormatBody(githubpkg.BodyOptions{
+		SpecMD:       candidate.SpecMD,
+		WhatWasBuilt: whatWasBuilt,
+		JiraKey:      candidate.JiraKey,
+		JiraURL:      candidate.JiraURL,
+		GateScore:    gateScore,
+		GateHygiene:  gateHygiene,
+		GateBuild:    gateBuild,
+		GateLint:     gateLint,
+		GateUnit:     gateUnit,
+		CostUSD:      bs.CostUSD,
+		Turns:        bs.Turns,
+		Attempts:     bs.Attempts,
+	})
 
 	logf("build: opening PR on %s…\n", opts.Config.TargetRepo.Remote)
 	pr, err := githubpkg.Create(githubpkg.PROptions{
@@ -545,15 +555,20 @@ func publishBlocked(opts Options, date string, candidate state.Candidate, bs *bu
 			whatWasBuilt = r.Result
 		}
 	}
-	prBody := githubpkg.FormatBody(
-		candidate.SpecMD,
-		whatWasBuilt,
-		candidate.JiraKey,
-		gateResult.Score,
-		bs.CostUSD,
-		bs.Turns,
-		bs.Attempts,
-	)
+	prBody := githubpkg.FormatBody(githubpkg.BodyOptions{
+		SpecMD:       candidate.SpecMD,
+		WhatWasBuilt: whatWasBuilt,
+		JiraKey:      candidate.JiraKey,
+		JiraURL:      candidate.JiraURL,
+		GateScore:    gateResult.Score,
+		GateHygiene:  gateResult.Stages.Hygiene,
+		GateBuild:    gateResult.Stages.Build,
+		GateLint:     gateResult.Stages.Lint,
+		GateUnit:     gateResult.Stages.Unit,
+		CostUSD:      bs.CostUSD,
+		Turns:        bs.Turns,
+		Attempts:     bs.Attempts,
+	})
 
 	pr, err := githubpkg.Create(githubpkg.PROptions{
 		RepoSlug: opts.Config.TargetRepo.Remote,
