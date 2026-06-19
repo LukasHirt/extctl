@@ -40,9 +40,9 @@ Then commit:
 ```bash
 git add extensions/{{EXT_ID}}/
 git status   # verify only extensions/{{EXT_ID}}/ is staged
-git commit -m "[repair] {{EXT_ID}}"
+git commit -m "fix(web-app-{{EXT_ID}}): repair failing stage"
 ```
 
-The commit message must start with `[repair] `. Do not commit anything outside `extensions/{{EXT_ID}}/`.
+Do not commit anything outside `extensions/{{EXT_ID}}/`.
 
 You are done when the build, lint, typecheck, and test all pass and the fix is committed.
