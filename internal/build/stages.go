@@ -60,16 +60,25 @@ func DeriveStages(cfg *config.Config, id, planPath, stagesPath string) error {
 	return nil
 }
 
+// docStageText is the canonical description of the fixed documentation stage.
+const docStageText = "Update README.md (and CLAUDE.md if present) for the extension"
+
 // AppendDocStage appends the fixed documentation stage to an existing stages.md.
 // The new stage number is one more than the current highest stage.
+// If the last stage already matches the doc stage text, this is a no-op (idempotent).
 func AppendDocStage(stagesPath string) error {
 	stages, err := ParseStages(stagesPath)
 	if err != nil {
 		return fmt.Errorf("parse stages for doc append: %w", err)
 	}
 
+	// Idempotency guard: skip if the doc stage is already the last stage.
+	if len(stages) > 0 && stages[len(stages)-1] == docStageText {
+		return nil
+	}
+
 	n := len(stages) + 1
-	line := fmt.Sprintf("- [ ] %d. Update README.md (and CLAUDE.md if present) for the extension\n", n)
+	line := fmt.Sprintf("- [ ] %d. %s\n", n, docStageText)
 
 	data, err := os.ReadFile(stagesPath)
 	if err != nil {

@@ -384,7 +384,7 @@ var approvePlanCmd = &cobra.Command{
 		if bs == nil {
 			return fmt.Errorf("candidate %s has no build state — run `extctl poll` or `extctl build %s` first", candidate.ID, candidate.ID)
 		}
-		if bs.Phase != build.PhasePlanReview {
+		if bs.Phase != build.PhasePlanReview && bs.Phase != build.PhaseStaging {
 			return fmt.Errorf("candidate %s is not in plan_review phase (current: %s)", candidate.ID, bs.Phase)
 		}
 
@@ -394,7 +394,7 @@ var approvePlanCmd = &cobra.Command{
 			return fmt.Errorf("plan.md not found at %s: %w", planPath, err)
 		}
 
-		// Transition to staging phase.
+		// Transition to staging phase (no-op if re-entering from PhaseStaging).
 		bs.Phase = build.PhaseStaging
 		if err := build.SaveState(cfg.RunsDir, bs); err != nil {
 			return fmt.Errorf("save staging state: %w", err)
@@ -402,13 +402,17 @@ var approvePlanCmd = &cobra.Command{
 
 		fmt.Printf("[%s] approve-plan: deriving stages from %s…\n", candidate.ID, planPath)
 
-		// Run stage derivation.
+		// Run stage derivation — skip if stages.md already exists (crash-resume).
 		stagesPath := filepath.Join(cfg.RunsDir, date, candidate.ID, "stages.md")
-		if err := build.DeriveStages(cfg, candidate.ID, planPath, stagesPath); err != nil {
-			bs.Phase = build.PhaseBlocked
-			bs.ErrorMsg = "stage derivation failed: " + err.Error()
-			_ = build.SaveState(cfg.RunsDir, bs)
-			return fmt.Errorf("derive stages: %w", err)
+		if _, statErr := os.Stat(stagesPath); statErr != nil {
+			if err := build.DeriveStages(cfg, candidate.ID, planPath, stagesPath); err != nil {
+				bs.Phase = build.PhaseBlocked
+				bs.ErrorMsg = "stage derivation failed: " + err.Error()
+				_ = build.SaveState(cfg.RunsDir, bs)
+				return fmt.Errorf("derive stages: %w", err)
+			}
+		} else {
+			fmt.Printf("[%s] approve-plan: stages.md already exists — skipping derivation\n", candidate.ID)
 		}
 
 		// Append the fixed documentation stage.
@@ -477,7 +481,10 @@ var approveStagesCmd = &cobra.Command{
 		if bs == nil {
 			return fmt.Errorf("candidate %s has no build state", candidate.ID)
 		}
-		if bs.Phase != build.PhaseStagesReview {
+		if bs.Phase != build.PhaseStagesReview &&
+			bs.Phase != build.PhaseBuilding &&
+			bs.Phase != build.PhaseGating &&
+			bs.Phase != build.PhaseRepairing {
 			return fmt.Errorf("candidate %s is not in stages_review phase (current: %s)", candidate.ID, bs.Phase)
 		}
 
