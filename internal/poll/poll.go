@@ -498,7 +498,7 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 	pr, err := githubpkg.Create(githubpkg.PROptions{
 		RepoSlug: opts.Config.TargetRepo.Remote,
 		Branch:   bs.Branch,
-		Title:    candidate.Title,
+		Title:    fmt.Sprintf("feat(%s): add %s", candidate.ID, candidate.Title),
 		Body:     prBody,
 		Labels:   []string{},
 		Draft:    isDraft,
@@ -573,7 +573,7 @@ func publishBlocked(opts Options, date string, candidate state.Candidate, bs *bu
 	pr, err := githubpkg.Create(githubpkg.PROptions{
 		RepoSlug: opts.Config.TargetRepo.Remote,
 		Branch:   bs.Branch,
-		Title:    candidate.Title,
+		Title:    fmt.Sprintf("feat(%s): add %s", candidate.ID, candidate.Title),
 		Body:     prBody,
 		Labels:   []string{},
 		Draft:    true,
