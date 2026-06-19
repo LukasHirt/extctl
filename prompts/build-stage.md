@@ -49,11 +49,17 @@ Run the following checks in order and fix any errors before committing:
 3. `pnpm lint packages/web-app-{{EXT_ID}}/...` — fix all lint errors
 4. `pnpm test packages/web-app-{{EXT_ID}}/...` — all tests must pass
 
-Once all checks pass, commit your work:
+Once all checks pass, commit your work using a conventional commit message:
 
 ```
 git add packages/web-app-{{EXT_ID}}/
-git commit -s -m "[ext-stage-{{STAGE_NUM}}] {{STAGE_DESC}}"
+git commit -s -m "<type>(web-app-{{EXT_ID}}): {{STAGE_DESC}}"
 ```
+
+Choose `<type>` based on what this stage implements:
+- `feat` — new functionality or UI components (most stages)
+- `test` — test-only changes
+- `docs` — documentation-only changes
+- `chore` — scaffolding, build config, or package setup with no production code
 
 Do not include any other files in the commit.
