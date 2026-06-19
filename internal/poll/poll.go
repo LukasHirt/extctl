@@ -157,6 +157,7 @@ func Run(opts Options) (*Result, error) {
 				fmt.Printf("poll: warning: could not fetch comments for %s: %v\n", updatedCandidates[i].JiraKey, err)
 			} else {
 				updatedCandidates[i].IssueComments = jira.FormatComments(comments)
+				fmt.Printf("poll: fetched %d comment(s) for %s\n", len(comments), updatedCandidates[i].JiraKey)
 			}
 		}
 		// Propagate the fetched comments back into picked so runBuild sees them.
