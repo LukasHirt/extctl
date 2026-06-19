@@ -53,11 +53,12 @@ type Decay struct {
 }
 
 type Prompts struct {
-	GenSpecs string `yaml:"gen_specs"`
-	Plan     string `yaml:"plan"`
-	Build    string `yaml:"build"`
-	Repair   string `yaml:"repair"`
-	Revise   string `yaml:"revise"`
+	GenSpecs     string `yaml:"gen_specs"`
+	Plan         string `yaml:"plan"`
+	DeriveStages string `yaml:"derive_stages"`
+	Build        string `yaml:"build"`
+	Repair       string `yaml:"repair"`
+	Revise       string `yaml:"revise"`
 }
 
 // Scaffold controls how the extension template is sourced from the skeleton repo.
@@ -116,6 +117,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Prompts.Plan == "" {
 		c.Prompts.Plan = "prompts/plan-extension.md"
+	}
+	if c.Prompts.DeriveStages == "" {
+		c.Prompts.DeriveStages = "prompts/derive-stages.md"
 	}
 	if c.Prompts.Build == "" {
 		c.Prompts.Build = "prompts/build-extension.md"
