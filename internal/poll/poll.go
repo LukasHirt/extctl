@@ -462,7 +462,7 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 		Branch:   bs.Branch,
 		Title:    candidate.Title,
 		Body:     prBody,
-		Labels:   []string{"claude-generated", "delivered"},
+		Labels:   []string{},
 		Draft:    isDraft,
 	})
 	if err != nil {
@@ -525,7 +525,7 @@ func publishBlocked(opts Options, date string, candidate state.Candidate, bs *bu
 		Branch:   bs.Branch,
 		Title:    candidate.Title,
 		Body:     prBody,
-		Labels:   []string{"claude-generated"},
+		Labels:   []string{},
 		Draft:    true,
 	})
 	if err != nil {
