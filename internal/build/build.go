@@ -69,11 +69,15 @@ func Run(opts Options) (*RunResult, error) {
 		return nil, fmt.Errorf("copy scaffold: %w", err)
 	}
 
-	// 2. Copy CLAUDE.md into worktree root (provides conventions to the model).
+	// 2. Copy extctl's CLAUDE.md into worktree root only when the repo doesn't
+	// already have one. The repo's own CLAUDE.md takes precedence — it carries
+	// project conventions (i18n, component patterns, etc.) that the build agent
+	// must follow. Tool restrictions are already enforced via allowedTools.
 	dstCLAUDE := filepath.Join(opts.WorktreePath, "CLAUDE.md")
-	if err := copyFile(opts.ClaudeMDPath, dstCLAUDE); err != nil {
-		// Non-fatal: model still has the prompt conventions; log and continue.
-		opts.logf("build: warning: could not copy CLAUDE.md: %v\n", err)
+	if _, err := os.Stat(dstCLAUDE); os.IsNotExist(err) {
+		if err := copyFile(opts.ClaudeMDPath, dstCLAUDE); err != nil {
+			opts.logf("build: warning: could not copy CLAUDE.md: %v\n", err)
+		}
 	}
 
 	// 3. Render the build-extension.md prompt.
