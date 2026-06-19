@@ -13,6 +13,17 @@ The extension lives in `packages/web-app-{{EXT_ID}}/` within this repository.
 
 {{SPEC_MD}}
 
+## Issue Comments
+
+The following comments were left on the Jira issue before it entered the build
+pipeline. They are listed in chronological order — replies appear directly after
+the comment they respond to and may refine, scope-down, or override it. Read the
+full thread before drawing any conclusions; a later comment takes precedence over
+an earlier one on the same point. Treat the resulting consensus as binding
+constraints that override or refine the spec above.
+
+{{ISSUE_COMMENTS}}
+
 ## Context files
 
 1. Read the implementation plan first:

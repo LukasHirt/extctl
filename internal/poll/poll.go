@@ -138,7 +138,7 @@ func Run(opts Options) (*Result, error) {
 		}
 	}
 
-	// Update slate: mark newly-picked candidates.
+	// Update slate: mark newly-picked candidates and fetch their Jira comments.
 	if len(picked) > 0 {
 		pickedKeys := make(map[string]bool, len(picked))
 		for _, p := range picked {
@@ -147,8 +147,26 @@ func Run(opts Options) (*Result, error) {
 		updatedCandidates := make([]state.Candidate, len(slate.Candidates))
 		copy(updatedCandidates, slate.Candidates)
 		for i := range updatedCandidates {
-			if pickedKeys[updatedCandidates[i].JiraKey] {
-				updatedCandidates[i].Status = state.StatusPicked
+			if !pickedKeys[updatedCandidates[i].JiraKey] {
+				continue
+			}
+			updatedCandidates[i].Status = state.StatusPicked
+			// Fetch issue comments to carry into the build pipeline as context.
+			// Log a warning on error but don't block the build.
+			if comments, err := jiraClient.GetComments(updatedCandidates[i].JiraKey); err != nil {
+				fmt.Printf("poll: warning: could not fetch comments for %s: %v\n", updatedCandidates[i].JiraKey, err)
+			} else {
+				updatedCandidates[i].IssueComments = jira.FormatComments(comments)
+			}
+		}
+		// Propagate the fetched comments back into picked so runBuild sees them.
+		pickedByKey := make(map[string]*state.Candidate, len(updatedCandidates))
+		for i := range updatedCandidates {
+			pickedByKey[updatedCandidates[i].JiraKey] = &updatedCandidates[i]
+		}
+		for i := range picked {
+			if c := pickedByKey[picked[i].JiraKey]; c != nil {
+				picked[i].IssueComments = c.IssueComments
 			}
 		}
 		slate.Candidates = updatedCandidates
@@ -335,7 +353,7 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 		}
 
 		logf("planning: generating plan.md…\n")
-		if err := build.Plan(opts.Config, candidate.ID, candidate.SpecMD, planPath); err != nil {
+		if err := build.Plan(opts.Config, candidate.ID, candidate.SpecMD, candidate.IssueComments, planPath); err != nil {
 			bs.Phase = build.PhaseBlocked
 			bs.ErrorMsg = "planning failed: " + err.Error()
 			_ = build.SaveState(runsDir, bs)

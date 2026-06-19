@@ -18,11 +18,12 @@ var planTools = []string{"Read", "Grep", "Glob", "Write"}
 // variables, and invokes claude headlessly in the web-extensions checkout.
 //
 // Parameters:
-//   - cfg      – loaded extctl config
-//   - id       – extension ID, e.g. "web-app-ai-doc-summary"
-//   - specMD   – full ## CANDIDATE block from the slate
-//   - planPath – absolute path where Claude should write plan.md
-func Plan(cfg *config.Config, id, specMD, planPath string) error {
+//   - cfg           – loaded extctl config
+//   - id            – extension ID, e.g. "web-app-ai-doc-summary"
+//   - specMD        – full ## CANDIDATE block from the slate
+//   - issueComments – formatted Jira issue comments (from jira.FormatComments)
+//   - planPath      – absolute path where Claude should write plan.md
+func Plan(cfg *config.Config, id, specMD, issueComments, planPath string) error {
 	promptPath := cfg.Prompts.Plan
 	promptBytes, err := os.ReadFile(promptPath)
 	if err != nil {
@@ -30,9 +31,10 @@ func Plan(cfg *config.Config, id, specMD, planPath string) error {
 	}
 
 	prompt := renderTemplate(string(promptBytes), map[string]string{
-		"{{EXT_ID}}":    id,
-		"{{SPEC_MD}}":   specMD,
-		"{{PLAN_PATH}}": planPath,
+		"{{EXT_ID}}":        id,
+		"{{SPEC_MD}}":       specMD,
+		"{{ISSUE_COMMENTS}}": issueComments,
+		"{{PLAN_PATH}}":     planPath,
 	})
 
 	claudeOpts := claude.RunOptions{

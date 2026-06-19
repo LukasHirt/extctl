@@ -69,9 +69,11 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
 - `extctl slate status` — shows latest slate.
 - `extctl slate carryovers [--format=dedup-hint]` — lists live carryovers.
 - `extctl version` — prints version.
-- `extctl poll` — polls Jira for picks; on a pick, creates a worktree, runs
+- `extctl poll` — polls Jira for picks; on a pick, fetches Jira issue comments
+  and stores them as `issue_comments` in `slate.json`, creates a worktree, runs
   Claude with `plan-extension.md` to write `runs/<date>/<id>/plan.md`, and
-  sets the candidate state to `plan_review`.
+  sets the candidate state to `plan_review`. Issue comments are passed as
+  `{{ISSUE_COMMENTS}}` to the plan, derive-stages, and build-stage prompts.
 - `extctl poll --dry-run` — shows candidates in each build state without
   triggering any Claude invocations or Jira transitions.
 - `extctl approve-plan <id>` — reads the approved `plan.md`, runs Claude with
@@ -141,6 +143,12 @@ allowlists by prompt:
 
 No `git push`, no `gh`, no network tools — those are always orchestrator
 actions.
+
+**Issue comments:** `{{ISSUE_COMMENTS}}` is substituted into the planning,
+derive-stages, and build-stage prompts. It contains all Jira comments in
+chronological order, formatted with author and timestamp. Later comments
+(including replies) take precedence over earlier ones on the same point and
+are treated as binding constraints that override the original spec.
 
 **Jira transitions:** always look up the transition ID by name at runtime
 (see `client.Transition()`) — never hardcode transition IDs, they vary per

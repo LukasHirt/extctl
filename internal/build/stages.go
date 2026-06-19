@@ -25,7 +25,7 @@ var stageLineRe = regexp.MustCompile(`^- \[[ x]\] (\d+)\. (.+)$`)
 // DeriveStages invokes Claude to read planPath and write stages.md to stagesPath.
 // It reads the derive-stages.md prompt template, substitutes template variables,
 // and invokes Claude headlessly in the web-extensions checkout.
-func DeriveStages(cfg *config.Config, id, planPath, stagesPath string) error {
+func DeriveStages(cfg *config.Config, id, planPath, stagesPath, issueComments string) error {
 	promptPath := cfg.Prompts.DeriveStages
 	promptBytes, err := os.ReadFile(promptPath)
 	if err != nil {
@@ -33,9 +33,10 @@ func DeriveStages(cfg *config.Config, id, planPath, stagesPath string) error {
 	}
 
 	prompt := renderTemplate(string(promptBytes), map[string]string{
-		"{{EXT_ID}}":      id,
-		"{{PLAN_PATH}}":   planPath,
-		"{{STAGES_PATH}}": stagesPath,
+		"{{EXT_ID}}":         id,
+		"{{PLAN_PATH}}":      planPath,
+		"{{STAGES_PATH}}":    stagesPath,
+		"{{ISSUE_COMMENTS}}": issueComments,
 	})
 
 	claudeOpts := claude.RunOptions{

@@ -32,8 +32,9 @@ type Candidate struct {
 	Appearances int             `json:"appearances"`       // 1 = first day offered
 	Origin      string          `json:"origin"`            // "generated" | "carryover" | "manual"
 	FirstDate   string          `json:"first_date"`        // YYYY-MM-DD, day first offered
-	Effort      string          `json:"effort"`            // S | M | L
-	SpecMD      string          `json:"spec_md"`           // full ## CANDIDATE block
+	Effort        string          `json:"effort"`            // S | M | L
+	SpecMD        string          `json:"spec_md"`           // full ## CANDIDATE block
+	IssueComments string          `json:"issue_comments,omitempty"` // formatted Jira comments fetched at pick time
 }
 
 // Slate is the state file for one workday: runs/<date>/slate.json

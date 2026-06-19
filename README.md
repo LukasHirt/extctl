@@ -17,7 +17,10 @@ each, and writes today's candidate slate to `runs/<date>/slate.json`.
 
 **Phase B — pick-driven staged build**
 Polls Jira for a candidate transitioned to `Doing` by the manager. On a pick it
-runs a human-in-the-loop planning phase before writing any code:
+fetches all comments from the Jira issue and passes them as context to every
+Claude phase, so reviewer notes and constraints are reflected in the plan,
+stages, and implementation. It then runs a human-in-the-loop planning phase
+before writing any code:
 
 1. **Planning:** creates a git worktree and runs Claude Code to write
    `runs/<date>/<id>/plan.md` — a structured plan for the extension

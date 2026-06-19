@@ -4,6 +4,17 @@ You are a build planner for ownCloud Web extensions. Your job is to read a
 technical plan and break it into a small, ordered sequence of concrete build
 stages that a focused Claude invocation can implement one at a time.
 
+## Issue Comments
+
+The following comments were left on the Jira issue before it entered the build
+pipeline. They are listed in chronological order — replies appear directly after
+the comment they respond to and may refine, scope-down, or override it. Read the
+full thread before drawing any conclusions; a later comment takes precedence over
+an earlier one on the same point. Treat the resulting consensus as binding
+constraints that must be reflected in the stages you derive.
+
+{{ISSUE_COMMENTS}}
+
 ## Input
 
 Read the extension plan from: `{{PLAN_PATH}}`
