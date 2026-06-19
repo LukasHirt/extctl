@@ -26,7 +26,7 @@ type StageOptions struct {
 	WorktreePath  string // absolute path to git worktree
 	Date          string // YYYY-MM-DD
 	LogPrefix     string
-	SessionID     string // empty for stage 1; prior stage's session_id for stage 2+
+	PriorWork     string // git log summary of files committed in prior stages
 }
 
 func (opts StageOptions) logf(format string, args ...any) {
@@ -34,7 +34,8 @@ func (opts StageOptions) logf(format string, args ...any) {
 }
 
 // BuildStage runs one stage of the per-stage build loop.
-// Stage 1 starts a fresh Claude session. Stage 2+ resume the prior stage's session.
+// Each stage starts a fresh Claude session; prior stage context is provided via
+// opts.PriorWork (a compact git log summary) rather than session resumption.
 func BuildStage(opts StageOptions) (*RunResult, error) {
 	cfg := opts.Config
 
@@ -55,6 +56,7 @@ func BuildStage(opts StageOptions) (*RunResult, error) {
 		"{{STAGE_NUM}}":      strconv.Itoa(opts.StageNum),
 		"{{TOTAL_STAGES}}":   strconv.Itoa(opts.TotalStages),
 		"{{STAGE_DESC}}":     opts.StageDesc,
+		"{{PRIOR_WORK}}":     opts.PriorWork,
 	})
 
 	outputFile := filepath.Join(
@@ -69,9 +71,6 @@ func BuildStage(opts StageOptions) (*RunResult, error) {
 		WorkDir:      opts.WorktreePath,
 		OutputFile:   outputFile,
 	}
-	if opts.SessionID != "" {
-		claudeOpts.Resume = opts.SessionID
-	}
 
 	opts.logf("build: stage %d/%d — %s (workdir %s)…\n",
 		opts.StageNum, opts.TotalStages, opts.StageDesc, opts.WorktreePath)
@@ -79,10 +78,9 @@ func BuildStage(opts StageOptions) (*RunResult, error) {
 	result, err := claude.Run(claudeOpts)
 	if err != nil {
 		return &RunResult{
-			Success:   false,
-			ErrorMsg:  err.Error(),
-			SessionID: opts.SessionID,
-			Attempts:  1,
+			Success:  false,
+			ErrorMsg: err.Error(),
+			Attempts: 1,
 		}, fmt.Errorf("claude build-stage %d run: %w", opts.StageNum, err)
 	}
 

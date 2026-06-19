@@ -447,7 +447,16 @@ var approveStagesCmd = &cobra.Command{
 		}
 		outputDir := filepath.Join(cfg.RunsDir, date, candidate.ID)
 
-		sessionID := bs.SessionID
+		// stageSessionID holds the Claude session for the current stage only.
+		// It is used to resume the session for repair attempts within the same
+		// stage, but is cleared at the start of each new stage so that stages
+		// never inherit each other's conversation history.
+		// On crash recovery into PhaseGating/PhaseRepairing the prior session
+		// is restored so repair can resume it.
+		stageSessionID := ""
+		if entryPhase == build.PhaseGating || entryPhase == build.PhaseRepairing {
+			stageSessionID = bs.SessionID
+		}
 
 		// Per-stage build loop.
 		maxRepairs := cfg.Claude.MaxRepairAttempts
@@ -462,6 +471,12 @@ var approveStagesCmd = &cobra.Command{
 				continue
 			}
 
+			// New stage: clear the session so this stage starts fresh.
+			if stageNum > resumeStage {
+				stageSessionID = ""
+				bs.SessionID = ""
+			}
+
 			fmt.Printf("[%s] building stage %d/%d: %s\n", candidate.ID, stageNum, len(stages), stageDesc)
 
 			// Only run BuildStage if we're not resuming from a gate/repair crash
@@ -472,6 +487,10 @@ var approveStagesCmd = &cobra.Command{
 				(entryPhase == build.PhaseGating || entryPhase == build.PhaseRepairing)
 
 			if !skipBuild {
+				// Summarise files committed by prior stages so Claude has
+				// context without replaying the full conversation history.
+				priorWork, _ := build.PriorStagesSummary(worktreePath, stageNum-1)
+
 				result, err := build.BuildStage(build.StageOptions{
 					Config:        cfg,
 					CandidateID:   candidate.ID,
@@ -486,7 +505,7 @@ var approveStagesCmd = &cobra.Command{
 					StageDesc:     stageDesc,
 					WorktreePath:  worktreePath,
 					Date:          date,
-					SessionID:     sessionID,
+					PriorWork:     priorWork,
 				})
 				if err != nil {
 					bs.Phase = build.PhaseBlocked
@@ -495,8 +514,8 @@ var approveStagesCmd = &cobra.Command{
 					return fmt.Errorf("stage %d: %w", stageNum, err)
 				}
 
-				sessionID = result.SessionID
-				bs.SessionID = sessionID
+				stageSessionID = result.SessionID
+				bs.SessionID = stageSessionID
 				bs.CostUSD += result.CostUSD
 				bs.Turns += result.Turns
 			}
@@ -550,7 +569,7 @@ var approveStagesCmd = &cobra.Command{
 					Date:         date,
 					WorktreePath: worktreePath,
 					LogPrefix:    "[" + candidate.ID + "] ",
-				}, gateLog, sessionID)
+				}, gateLog, stageSessionID)
 				if repairErr != nil {
 					bs.Phase = build.PhaseBlocked
 					bs.ErrorMsg = repairErr.Error()
@@ -558,8 +577,8 @@ var approveStagesCmd = &cobra.Command{
 					return fmt.Errorf("stage %d repair attempt %d: %w", stageNum, repairAttempts, repairErr)
 				}
 
-				sessionID = repairResult.SessionID
-				bs.SessionID = sessionID
+				stageSessionID = repairResult.SessionID
+				bs.SessionID = stageSessionID
 				bs.CostUSD += repairResult.CostUSD
 				bs.Turns += repairResult.Turns
 				bs.Phase = build.PhaseGating
