@@ -39,12 +39,17 @@ func DeriveStages(cfg *config.Config, id, planPath, stagesPath, issueComments st
 		"{{ISSUE_COMMENTS}}": issueComments,
 	})
 
+	outputFile := filepath.Join(
+		filepath.Dir(stagesPath),
+		strings.TrimSuffix(filepath.Base(stagesPath), ".md")+".jsonl",
+	)
+
 	claudeOpts := claude.RunOptions{
 		Prompt:       prompt,
 		AllowedTools: stagesTools,
 		Model:        cfg.Claude.VersionPin,
 		WorkDir:      cfg.TargetRepo.Checkout,
-		OutputFile:   "", // no archiving needed for stage derivation
+		OutputFile:   outputFile,
 	}
 
 	result, err := claude.Run(claudeOpts)

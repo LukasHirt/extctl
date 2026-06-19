@@ -57,7 +57,7 @@ func Repair(opts Options, gateLog string, sessionID string) (*RunResult, error) 
 		"{{GATE_LOG}}": gateLog,
 	})
 
-	outputFile := filepath.Join(opts.Config.RunsDir, opts.Date, opts.CandidateID, "repair.json")
+	outputFile := filepath.Join(opts.Config.RunsDir, opts.Date, opts.CandidateID, "repair.jsonl")
 
 	claudeOpts := claude.RunOptions{
 		Prompt:       prompt,

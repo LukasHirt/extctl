@@ -3,6 +3,8 @@ package build
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/LukasHirt/extctl/internal/claude"
 	"github.com/LukasHirt/extctl/internal/config"
@@ -37,12 +39,17 @@ func Plan(cfg *config.Config, id, specMD, issueComments, planPath string) error 
 		"{{PLAN_PATH}}":     planPath,
 	})
 
+	outputFile := filepath.Join(
+		filepath.Dir(planPath),
+		strings.TrimSuffix(filepath.Base(planPath), ".md")+".jsonl",
+	)
+
 	claudeOpts := claude.RunOptions{
 		Prompt:       prompt,
 		AllowedTools: planTools,
 		Model:        cfg.Claude.VersionPin,
 		WorkDir:      cfg.TargetRepo.Checkout,
-		OutputFile:   "", // no archiving needed for planning
+		OutputFile:   outputFile,
 	}
 
 	result, err := claude.Run(claudeOpts)

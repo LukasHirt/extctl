@@ -1,7 +1,6 @@
 package gen
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -129,28 +128,28 @@ func Run(opts Options) (*Result, error) {
 	}
 
 	// 4. Run claude or load from existing file.
-	outputFile := filepath.Join(opts.Config.RunsDir, date, "specgen.json")
+	outputFile := filepath.Join(opts.Config.RunsDir, date, "specgen.jsonl")
 
 	var result *claude.Result
 	if opts.FromFile != "" {
 		// Load candidates from an existing specgen.json instead of calling Claude.
 		fmt.Printf("Loading candidates from %s…\n", opts.FromFile)
-		data, err := os.ReadFile(opts.FromFile)
+		r, err := claude.LoadResult(opts.FromFile)
 		if err != nil {
-			return nil, fmt.Errorf("read --from-file %s: %w", opts.FromFile, err)
+			return nil, fmt.Errorf("--from-file: %w", err)
 		}
-		var r claude.Result
-		if err := json.Unmarshal(data, &r); err != nil {
-			return nil, fmt.Errorf("parse --from-file %s: %w", opts.FromFile, err)
-		}
-		result = &r
+		result = r
 		// Copy to the canonical output location if it's a different file.
 		if abs, _ := filepath.Abs(opts.FromFile); abs != outputFile {
+			data, err := os.ReadFile(opts.FromFile)
+			if err != nil {
+				return nil, fmt.Errorf("read --from-file for copy: %w", err)
+			}
 			if err := os.MkdirAll(filepath.Dir(outputFile), 0o755); err != nil {
 				return nil, fmt.Errorf("mkdir for output file: %w", err)
 			}
 			if err := os.WriteFile(outputFile, data, 0o644); err != nil {
-				return nil, fmt.Errorf("copy specgen.json: %w", err)
+				return nil, fmt.Errorf("copy specgen.jsonl: %w", err)
 			}
 		}
 		fmt.Printf("Loaded: %d turns, $%.4f\n", result.NumTurns, result.TotalCostUSD)
