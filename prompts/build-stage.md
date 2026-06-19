@@ -24,6 +24,14 @@ constraints that override or refine the spec above.
 
 {{ISSUE_COMMENTS}}
 
+## Prior stages
+
+The following commits have already been made for this extension. Read whichever
+of these files are relevant before implementing stage {{STAGE_NUM}} — do not
+recreate anything already committed.
+
+{{PRIOR_WORK}}
+
 ## Context files
 
 1. Read the implementation plan first:

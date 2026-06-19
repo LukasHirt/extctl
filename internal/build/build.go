@@ -3,6 +3,7 @@ package build
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -94,4 +95,26 @@ func renderTemplate(tmpl string, vars map[string]string) string {
 		tmpl = strings.ReplaceAll(tmpl, k, v)
 	}
 	return tmpl
+}
+
+// PriorStagesSummary returns a compact git log summary of the last n commits in
+// the worktree, showing the subject and changed files for each stage. This gives
+// each new build stage enough context to understand what prior stages built
+// without replaying the full conversation history.
+func PriorStagesSummary(worktreePath string, n int) (string, error) {
+	if n <= 0 {
+		return "", nil
+	}
+	cmd := exec.Command("git", "log",
+		"--reverse",
+		fmt.Sprintf("-n%d", n),
+		"--name-status",
+		"--format=--- %s ---",
+	)
+	cmd.Dir = worktreePath
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git log prior stages: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
