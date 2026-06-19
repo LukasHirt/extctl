@@ -227,7 +227,7 @@ func Run(opts Options) (*Result, error) {
 			Project:     opts.Config.Jira.Project,
 			Summary:     summary,
 			Description: body,
-			Labels:      []string{"ext-candidate", "claude-generated"},
+			Labels:      []string{"ext-candidate"},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("create issue for %s: %w", pc.ID, err)
