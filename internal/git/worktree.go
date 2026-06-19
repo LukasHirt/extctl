@@ -15,25 +15,33 @@ func FetchOrigin(repoPath string) error {
 }
 
 // CreateWorktree creates (or reuses) a git worktree at worktreePath on branch.
+// worktreePath is resolved to an absolute path so that the same location is used
+// by both Go's os calls and git -C <repoPath> worktree add (which otherwise
+// resolves relative paths relative to repoPath, not the caller's CWD).
+//
 // Handles three cases from interrupted prior runs:
 //   - valid worktree dir exists (.git present) → reuse as-is
 //   - dir exists but no .git (stale from a removed worktree) → remove and recreate
 //   - branch exists but worktree dir doesn't → add without -b
 //   - neither exists → create branch and worktree fresh
 func CreateWorktree(repoPath, worktreePath, branch, baseBranch string) error {
-	if _, err := os.Stat(worktreePath); err == nil {
-		if _, gitErr := os.Stat(filepath.Join(worktreePath, ".git")); gitErr == nil {
+	abs, err := filepath.Abs(worktreePath)
+	if err != nil {
+		return fmt.Errorf("resolve worktree path: %w", err)
+	}
+	if _, err := os.Stat(abs); err == nil {
+		if _, gitErr := os.Stat(filepath.Join(abs, ".git")); gitErr == nil {
 			return nil // valid worktree from a prior run
 		}
 		// Directory exists but has no .git — stale from git worktree remove.
-		if err := os.RemoveAll(worktreePath); err != nil {
+		if err := os.RemoveAll(abs); err != nil {
 			return fmt.Errorf("remove stale worktree directory: %w", err)
 		}
 	}
 	if branchExists(repoPath, branch) {
-		return run(repoPath, "worktree", "add", worktreePath, branch)
+		return run(repoPath, "worktree", "add", abs, branch)
 	}
-	return run(repoPath, "worktree", "add", worktreePath, "-b", branch, baseBranch)
+	return run(repoPath, "worktree", "add", abs, "-b", branch, baseBranch)
 }
 
 func branchExists(repoPath, branch string) bool {
