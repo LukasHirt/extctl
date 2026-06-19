@@ -3,17 +3,19 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
-
-	"path/filepath"
-	"time"
 
 	"github.com/LukasHirt/extctl/internal/build"
 	"github.com/LukasHirt/extctl/internal/config"
 	"github.com/LukasHirt/extctl/internal/gate"
 	"github.com/LukasHirt/extctl/internal/gen"
 	gitpkg "github.com/LukasHirt/extctl/internal/git"
+	githubpkg "github.com/LukasHirt/extctl/internal/github"
+	"github.com/LukasHirt/extctl/internal/jira"
 	"github.com/LukasHirt/extctl/internal/poll"
 	scaffoldpkg "github.com/LukasHirt/extctl/internal/scaffold"
 	"github.com/LukasHirt/extctl/internal/state"
@@ -336,6 +338,405 @@ var gateCmd = &cobra.Command{
 	},
 }
 
+// --- approve-plan command ---
+
+var approvePlanCmd = &cobra.Command{
+	Use:   "approve-plan <candidate-id>",
+	Short: "Approve the plan for a candidate and derive implementation stages",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		candidateID := args[0]
+
+		loc, err := time.LoadLocation(cfg.Timezone)
+		if err != nil {
+			return fmt.Errorf("load timezone: %w", err)
+		}
+		date := time.Now().In(loc).Format("2006-01-02")
+
+		// Look up the candidate from slates.
+		slates, err := state.LoadAll(cfg.RunsDir)
+		if err != nil {
+			return fmt.Errorf("load slates: %w", err)
+		}
+		var candidate *state.Candidate
+		for i := len(slates) - 1; i >= 0; i-- {
+			for j := range slates[i].Candidates {
+				c := &slates[i].Candidates[j]
+				if c.ID == candidateID || c.JiraKey == candidateID {
+					candidate = c
+					date = slates[i].Date
+					break
+				}
+			}
+			if candidate != nil {
+				break
+			}
+		}
+		if candidate == nil {
+			return fmt.Errorf("candidate %q not found in any slate", candidateID)
+		}
+
+		// Load build state.
+		bs, err := build.LoadState(cfg.RunsDir, date, candidate.ID)
+		if err != nil {
+			return fmt.Errorf("load build state: %w", err)
+		}
+		if bs == nil {
+			return fmt.Errorf("candidate %s has no build state — run `extctl poll` or `extctl build %s` first", candidate.ID, candidate.ID)
+		}
+		if bs.Phase != build.PhasePlanReview {
+			return fmt.Errorf("candidate %s is not in plan_review phase (current: %s)", candidate.ID, bs.Phase)
+		}
+
+		// Check plan.md exists.
+		planPath := filepath.Join(cfg.RunsDir, date, candidate.ID, "plan.md")
+		if _, err := os.Stat(planPath); err != nil {
+			return fmt.Errorf("plan.md not found at %s: %w", planPath, err)
+		}
+
+		// Transition to staging phase.
+		bs.Phase = build.PhaseStaging
+		if err := build.SaveState(cfg.RunsDir, bs); err != nil {
+			return fmt.Errorf("save staging state: %w", err)
+		}
+
+		fmt.Printf("[%s] approve-plan: deriving stages from %s…\n", candidate.ID, planPath)
+
+		// Run stage derivation.
+		stagesPath := filepath.Join(cfg.RunsDir, date, candidate.ID, "stages.md")
+		if err := build.DeriveStages(cfg, candidate.ID, planPath, stagesPath); err != nil {
+			bs.Phase = build.PhaseBlocked
+			bs.ErrorMsg = "stage derivation failed: " + err.Error()
+			_ = build.SaveState(cfg.RunsDir, bs)
+			return fmt.Errorf("derive stages: %w", err)
+		}
+
+		// Append the fixed documentation stage.
+		if err := build.AppendDocStage(stagesPath); err != nil {
+			bs.Phase = build.PhaseBlocked
+			bs.ErrorMsg = "append doc stage failed: " + err.Error()
+			_ = build.SaveState(cfg.RunsDir, bs)
+			return fmt.Errorf("append doc stage: %w", err)
+		}
+
+		// Transition to stages_review phase.
+		bs.Phase = build.PhaseStagesReview
+		if err := build.SaveState(cfg.RunsDir, bs); err != nil {
+			return fmt.Errorf("save stages-review state: %w", err)
+		}
+
+		fmt.Printf("[%s] approve-plan: stages written to %s\n", candidate.ID, stagesPath)
+		fmt.Printf("[%s] approve-plan: review stages.md then run `extctl approve-stages %s` to continue\n", candidate.ID, candidate.ID)
+		return nil
+	},
+}
+
+// --- approve-stages command ---
+
+var approveStagesCmd = &cobra.Command{
+	Use:   "approve-stages <candidate-id>",
+	Short: "Approve the stages and run the per-stage build loop",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		candidateID := args[0]
+
+		loc, err := time.LoadLocation(cfg.Timezone)
+		if err != nil {
+			return fmt.Errorf("load timezone: %w", err)
+		}
+		date := time.Now().In(loc).Format("2006-01-02")
+
+		// Look up the candidate from slates.
+		slates, err := state.LoadAll(cfg.RunsDir)
+		if err != nil {
+			return fmt.Errorf("load slates: %w", err)
+		}
+		var candidate *state.Candidate
+		for i := len(slates) - 1; i >= 0; i-- {
+			for j := range slates[i].Candidates {
+				c := &slates[i].Candidates[j]
+				if c.ID == candidateID || c.JiraKey == candidateID {
+					candidate = c
+					date = slates[i].Date
+					break
+				}
+			}
+			if candidate != nil {
+				break
+			}
+		}
+		if candidate == nil {
+			return fmt.Errorf("candidate %q not found in any slate", candidateID)
+		}
+
+		// Load build state.
+		bs, err := build.LoadState(cfg.RunsDir, date, candidate.ID)
+		if err != nil {
+			return fmt.Errorf("load build state: %w", err)
+		}
+		if bs == nil {
+			return fmt.Errorf("candidate %s has no build state", candidate.ID)
+		}
+		if bs.Phase != build.PhaseStagesReview {
+			return fmt.Errorf("candidate %s is not in stages_review phase (current: %s)", candidate.ID, bs.Phase)
+		}
+
+		// Check stages.md exists.
+		stagesPath := filepath.Join(cfg.RunsDir, date, candidate.ID, "stages.md")
+		if _, err := os.Stat(stagesPath); err != nil {
+			return fmt.Errorf("stages.md not found at %s: %w", stagesPath, err)
+		}
+
+		// Parse stages to get total count.
+		stages, err := build.ParseStages(stagesPath)
+		if err != nil {
+			return fmt.Errorf("parse stages: %w", err)
+		}
+		if len(stages) == 0 {
+			return fmt.Errorf("stages.md contains no stages")
+		}
+
+		planPath := filepath.Join(cfg.RunsDir, date, candidate.ID, "plan.md")
+		worktreePath := filepath.Join(cfg.RunsDir, date, candidate.ID, "worktree")
+
+		// Transition to building phase, set stage counters.
+		bs.Phase = build.PhaseBuilding
+		bs.TotalStages = len(stages)
+		if bs.CurrentStage < 1 {
+			bs.CurrentStage = 1
+		}
+		if err := build.SaveState(cfg.RunsDir, bs); err != nil {
+			return fmt.Errorf("save building state: %w", err)
+		}
+
+		// Resolve gate script path.
+		absGateScript, err := filepath.Abs("gate/run-gate.sh")
+		if err != nil {
+			return fmt.Errorf("resolve gate script path: %w", err)
+		}
+		outputDir := filepath.Join(cfg.RunsDir, date, candidate.ID)
+
+		sessionID := bs.SessionID
+
+		// Per-stage build loop.
+		maxRepairs := cfg.Claude.MaxRepairAttempts
+		if maxRepairs < 1 {
+			maxRepairs = 1
+		}
+
+		for i, stageDesc := range stages {
+			stageNum := i + 1
+			if stageNum < bs.CurrentStage {
+				fmt.Printf("[%s] stage %d/%d: already done — skipping\n", candidate.ID, stageNum, len(stages))
+				continue
+			}
+
+			fmt.Printf("[%s] building stage %d/%d: %s\n", candidate.ID, stageNum, len(stages), stageDesc)
+
+			result, err := build.BuildStage(build.StageOptions{
+				Config:       cfg,
+				CandidateID:  candidate.ID,
+				Title:        candidate.Title,
+				Effort:       candidate.Effort,
+				SpecMD:       candidate.SpecMD,
+				PlanPath:     planPath,
+				StagesPath:   stagesPath,
+				StageNum:     stageNum,
+				TotalStages:  len(stages),
+				StageDesc:    stageDesc,
+				WorktreePath: worktreePath,
+				Date:         date,
+				SessionID:    sessionID,
+			})
+			if err != nil {
+				bs.Phase = build.PhaseBlocked
+				bs.ErrorMsg = err.Error()
+				_ = build.SaveState(cfg.RunsDir, bs)
+				return fmt.Errorf("stage %d: %w", stageNum, err)
+			}
+
+			sessionID = result.SessionID
+			bs.SessionID = sessionID
+			bs.CostUSD += result.CostUSD
+			bs.Turns += result.Turns
+
+			// Run gate after each stage.
+			bs.Phase = build.PhaseGating
+			_ = build.SaveState(cfg.RunsDir, bs)
+
+			bulletCount := countSpecBullets(candidate.SpecMD)
+			gateResult, gateErr := gate.Run(absGateScript, worktreePath, candidate.ID, outputDir, bulletCount)
+			if gateErr != nil {
+				bs.Phase = build.PhaseBlocked
+				bs.ErrorMsg = "gate error: " + gateErr.Error()
+				_ = build.SaveState(cfg.RunsDir, bs)
+				return fmt.Errorf("gate stage %d: %w", stageNum, gateErr)
+			}
+			bs.Gate = &build.GateResult{
+				Passed: gateResult.Passed,
+				Score:  gateResult.Score,
+				Stages: build.GateStages{
+					Hygiene: gateResult.Stages.Hygiene,
+					Build:   gateResult.Stages.Build,
+					Lint:    gateResult.Stages.Lint,
+					Unit:    gateResult.Stages.Unit,
+				},
+			}
+
+			// Repair loop if gate failed.
+			repairAttempts := 0
+			for !gateResult.Passed {
+				if repairAttempts >= maxRepairs {
+					bs.Phase = build.PhaseBlocked
+					bs.ErrorMsg = fmt.Sprintf("gate failed after %d repair attempt(s) at stage %d", repairAttempts, stageNum)
+					_ = build.SaveState(cfg.RunsDir, bs)
+					return fmt.Errorf("stage %d: gate failed after %d repair attempt(s)", stageNum, repairAttempts)
+				}
+
+				repairAttempts++
+				bs.Attempts++
+				fmt.Printf("[%s] stage %d gate failed (repair attempt %d/%d)…\n", candidate.ID, stageNum, repairAttempts, maxRepairs)
+				bs.Phase = build.PhaseRepairing
+				_ = build.SaveState(cfg.RunsDir, bs)
+
+				gateLog, _ := gate.ReadLog(outputDir)
+				repairResult, repairErr := build.Repair(build.Options{
+					Config:       cfg,
+					CandidateID:  candidate.ID,
+					JiraKey:      candidate.JiraKey,
+					SpecMD:       candidate.SpecMD,
+					Effort:       candidate.Effort,
+					Date:         date,
+					WorktreePath: worktreePath,
+					LogPrefix:    "[" + candidate.ID + "] ",
+				}, gateLog, sessionID)
+				if repairErr != nil {
+					bs.Phase = build.PhaseBlocked
+					bs.ErrorMsg = repairErr.Error()
+					_ = build.SaveState(cfg.RunsDir, bs)
+					return fmt.Errorf("stage %d repair attempt %d: %w", stageNum, repairAttempts, repairErr)
+				}
+
+				sessionID = repairResult.SessionID
+				bs.SessionID = sessionID
+				bs.CostUSD += repairResult.CostUSD
+				bs.Turns += repairResult.Turns
+				bs.Phase = build.PhaseGating
+				_ = build.SaveState(cfg.RunsDir, bs)
+
+				gateResult, gateErr = gate.Run(absGateScript, worktreePath, candidate.ID, outputDir, bulletCount)
+				if gateErr != nil {
+					bs.Phase = build.PhaseBlocked
+					bs.ErrorMsg = "gate error after repair: " + gateErr.Error()
+					_ = build.SaveState(cfg.RunsDir, bs)
+					return fmt.Errorf("gate after stage %d repair: %w", stageNum, gateErr)
+				}
+				bs.Gate = &build.GateResult{
+					Passed: gateResult.Passed,
+					Score:  gateResult.Score,
+					Stages: build.GateStages{
+						Hygiene: gateResult.Stages.Hygiene,
+						Build:   gateResult.Stages.Build,
+						Lint:    gateResult.Stages.Lint,
+						Unit:    gateResult.Stages.Unit,
+					},
+				}
+			}
+
+			// Gate passed — mark stage done.
+			if err := build.CheckStage(stagesPath, stageNum); err != nil {
+				return fmt.Errorf("check stage %d: %w", stageNum, err)
+			}
+			bs.CurrentStage = stageNum + 1
+			bs.Phase = build.PhaseBuilding
+			_ = build.SaveState(cfg.RunsDir, bs)
+
+			fmt.Printf("[%s] stage %d/%d passed gate (score %.2f)\n", candidate.ID, stageNum, len(stages), gateResult.Score)
+		}
+
+		// All stages passed — publish.
+		bs.Phase = build.PhaseGated
+		_ = build.SaveState(cfg.RunsDir, bs)
+
+		fmt.Printf("[%s] all %d stages passed — publishing…\n", candidate.ID, len(stages))
+
+		// Push branch.
+		bs.Phase = build.PhasePublishing
+		_ = build.SaveState(cfg.RunsDir, bs)
+
+		fmt.Printf("[%s] pushing branch %s…\n", candidate.ID, bs.Branch)
+		if err := gitpkg.PushBranch(cfg.TargetRepo.Checkout, bs.Branch); err != nil {
+			return fmt.Errorf("push branch: %w", err)
+		}
+
+		gateScore := 0.0
+		if bs.Gate != nil {
+			gateScore = bs.Gate.Score
+		}
+		prBody := githubpkg.FormatBody(
+			candidate.SpecMD,
+			"",
+			candidate.JiraKey,
+			gateScore,
+			bs.CostUSD,
+			bs.Turns,
+			bs.Attempts,
+		)
+
+		fmt.Printf("[%s] opening PR on %s…\n", candidate.ID, cfg.TargetRepo.Remote)
+		pr, err := githubpkg.Create(githubpkg.PROptions{
+			RepoSlug: cfg.TargetRepo.Remote,
+			Branch:   bs.Branch,
+			Title:    candidate.Title,
+			Body:     prBody,
+			Labels:   []string{},
+			Draft:    false,
+		})
+		if err != nil {
+			return fmt.Errorf("create PR: %w", err)
+		}
+
+		bs.PR = &build.PRResult{Number: pr.Number, URL: pr.URL, Ready: true}
+		bs.Phase = build.PhaseDone
+		_ = build.SaveState(cfg.RunsDir, bs)
+
+		// Comment on the Jira issue with the PR link.
+		jiraToken, jiraErr := config.JiraToken()
+		jiraEmail, jiraEmailErr := config.JiraEmail()
+		if jiraErr == nil && jiraEmailErr == nil && candidate.JiraKey != "" {
+			jiraClient := jira.NewClient(cfg.Jira.BaseURL, jiraEmail, jiraToken)
+			comment := fmt.Sprintf("PR opened: %s\n\nGate score: %.2f | Cost: $%.2f | Turns: %d | Attempts: %d",
+				pr.URL, gateScore, bs.CostUSD, bs.Turns, bs.Attempts)
+			if addErr := jiraClient.AddComment(candidate.JiraKey, comment); addErr != nil {
+				fmt.Printf("[%s] warning: could not comment on Jira issue: %v\n", candidate.ID, addErr)
+			}
+		}
+
+		// Clean up worktree on success.
+		if err := gitpkg.RemoveWorktree(cfg.TargetRepo.Checkout, worktreePath); err != nil {
+			fmt.Printf("[%s] warning: could not remove worktree: %v\n", candidate.ID, err)
+		}
+
+		fmt.Printf("[%s] done — PR #%d: %s\n", candidate.ID, pr.Number, pr.URL)
+		return nil
+	},
+}
+
+// countSpecBullets counts bullet lines in specMD for gate scoring.
+func countSpecBullets(specMD string) int {
+	n := 0
+	for _, line := range strings.Split(specMD, "\n") {
+		trimmed := strings.TrimLeft(line, " \t")
+		if len(trimmed) > 0 && (trimmed[0] == '-' || trimmed[0] == '*') {
+			n++
+		}
+	}
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
 // --- version command ---
 
 var version = "dev"
@@ -372,7 +773,7 @@ func init() {
 
 	slateCmd.AddCommand(slateStatusCmd, slateCarryoversCmd)
 	scaffoldCmd.AddCommand(scaffoldFetchCmd)
-	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, buildCmd, gateCmd, scaffoldCmd, versionCmd)
+	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, buildCmd, gateCmd, scaffoldCmd, approvePlanCmd, approveStagesCmd, versionCmd)
 }
 
 func main() {
