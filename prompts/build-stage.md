@@ -53,7 +53,7 @@ Once all checks pass, commit your work:
 
 ```
 git add packages/web-app-{{EXT_ID}}/
-git commit -m "[ext-stage-{{STAGE_NUM}}] {{STAGE_DESC}}"
+git commit -s -m "[ext-stage-{{STAGE_NUM}}] {{STAGE_DESC}}"
 ```
 
 Do not include any other files in the commit.
