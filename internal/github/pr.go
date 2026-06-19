@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -40,7 +41,6 @@ func Create(opts PROptions) (*PR, error) {
 	if opts.Draft {
 		args = append(args, "--draft")
 	}
-	args = append(args, "--json", "number,url")
 
 	cmd := exec.Command("gh", args...)
 	out, err := cmd.Output()
@@ -52,14 +52,22 @@ func Create(opts PROptions) (*PR, error) {
 		return nil, fmt.Errorf("gh pr create: %w\nstderr: %s", err, strings.TrimSpace(stderr))
 	}
 
-	var result struct {
-		Number int    `json:"number"`
-		URL    string `json:"url"`
+	// gh pr create outputs the PR URL as the last line of stdout
+	prURL := strings.TrimSpace(string(out))
+	if lines := strings.Split(prURL, "\n"); len(lines) > 0 {
+		prURL = strings.TrimSpace(lines[len(lines)-1])
 	}
-	if err := json.Unmarshal(out, &result); err != nil {
-		return nil, fmt.Errorf("parse gh pr create output: %w\nraw: %s", err, string(out))
+
+	// extract PR number from URL (e.g. https://github.com/org/repo/pull/42)
+	parts := strings.Split(prURL, "/")
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("parse gh pr create output: unexpected URL %q", prURL)
 	}
-	return &PR{Number: result.Number, URL: result.URL}, nil
+	prNumber, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil {
+		return nil, fmt.Errorf("parse gh pr create output: non-numeric PR number in URL %q", prURL)
+	}
+	return &PR{Number: prNumber, URL: prURL}, nil
 }
 
 // IsMerged reports whether the given PR number has been merged.
