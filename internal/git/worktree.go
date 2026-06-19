@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -15,12 +16,19 @@ func FetchOrigin(repoPath string) error {
 
 // CreateWorktree creates (or reuses) a git worktree at worktreePath on branch.
 // Handles three cases from interrupted prior runs:
-//   - worktree dir exists → reuse as-is
+//   - valid worktree dir exists (.git present) → reuse as-is
+//   - dir exists but no .git (stale from a removed worktree) → remove and recreate
 //   - branch exists but worktree dir doesn't → add without -b
 //   - neither exists → create branch and worktree fresh
 func CreateWorktree(repoPath, worktreePath, branch, baseBranch string) error {
 	if _, err := os.Stat(worktreePath); err == nil {
-		return nil // worktree already set up from a prior run
+		if _, gitErr := os.Stat(filepath.Join(worktreePath, ".git")); gitErr == nil {
+			return nil // valid worktree from a prior run
+		}
+		// Directory exists but has no .git — stale from git worktree remove.
+		if err := os.RemoveAll(worktreePath); err != nil {
+			return fmt.Errorf("remove stale worktree directory: %w", err)
+		}
 	}
 	if branchExists(repoPath, branch) {
 		return run(repoPath, "worktree", "add", worktreePath, branch)
