@@ -130,7 +130,7 @@ func FormatBody(specMD, whatWasBuilt, jiraKey string, gateScore float64, costUSD
 	if whatWasBuilt != "" {
 		b.WriteString(whatWasBuilt)
 	} else {
-		b.WriteString("_(see result.json for Claude's summary)_")
+		b.WriteString("_(build summary unavailable)_")
 	}
 	b.WriteString("\n\n")
 
