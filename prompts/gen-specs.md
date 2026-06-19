@@ -36,9 +36,8 @@ table.
 
 Beyond this table, also investigate the actual codebase:
 
-- `Glob` and `Read` through `extensions/` (or the equivalent extension directories)
-  to see what extensions already exist. **Never propose something that already
-  exists or substantially overlaps with it.**
+- `Glob` and `Read` through `packages/` to see what extensions already exist.
+  **Never propose something that already exists or substantially overlaps with it.**
 - `Grep` for `defineWebApplication` and usages of the extension point IDs above to
   see concrete examples of how an existing extension registers for one — use these
   as the implementation pattern reference for `evidence`.
@@ -105,7 +104,7 @@ evidence: |
 - **No invented extension points.** Every `extension_point` value must come from
   the table in Step 1, or be a standalone `defineWebApplication` app (note this
   explicitly). Do not propose extension points outside that table.
-- **No duplication.** Check `extensions/` and the carryover list (if provided)
+- **No duplication.** Check `packages/` and the carryover list (if provided)
   before finalizing; do not propose something functionally identical to an
   existing extension or to a candidate already in today's slate.
 - **Elevator-pitch length.** `problem`, `sketch`, and `why_now` combined should be
