@@ -59,7 +59,7 @@ func BuildStage(opts StageOptions) (*RunResult, error) {
 
 	outputFile := filepath.Join(
 		cfg.RunsDir, opts.Date, opts.CandidateID,
-		fmt.Sprintf("stage-%d.json", opts.StageNum),
+		fmt.Sprintf("stage-%d.jsonl", opts.StageNum),
 	)
 
 	claudeOpts := claude.RunOptions{
