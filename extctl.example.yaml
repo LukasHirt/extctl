@@ -37,7 +37,10 @@ decay:
 
 prompts:
   gen_specs: 'prompts/gen-specs.md'
-  build: 'prompts/build-extension.md'
+  plan: 'prompts/plan-extension.md'
+  derive_stages: 'prompts/derive-stages.md'
+  build_stage: 'prompts/build-stage.md'
+  build: 'prompts/build-extension.md'  # legacy – superseded by build_stage
   repair: 'prompts/repair.md'
   revise: 'prompts/revise.md'
 

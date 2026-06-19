@@ -251,6 +251,9 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 		case build.PhaseBlocked:
 			logf("build: blocked — skipping (manual intervention needed, see PR)\n")
 			return nil
+		case build.PhasePlanReview, build.PhaseStagesReview:
+			logf("build: waiting for approval (phase %s) — run `extctl approve-plan %s`\n", bs.Phase, candidate.ID)
+			return nil
 		}
 	}
 
@@ -275,13 +278,16 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 			outputDir := filepath.Join(runsDir, date, candidate.ID)
 			logf("build: resuming from %s (session %s, attempts %d)…\n", bs.Phase, bs.SessionID, bs.Attempts)
 			return gateRepairPublish(opts, date, candidate, bs, worktreePath, outputDir, bs.SessionID, jiraClient)
+		case build.PhasePlanning, build.PhaseStaging:
+			logf("build: restarting from %s (previous run interrupted)\n", bs.Phase)
+			// fall through to re-enter from the top of the pipeline
+		default:
+			logf("build: in phase %s; restarting build\n", bs.Phase)
 		}
-		logf("build: in phase %s; restarting build\n", bs.Phase)
 	}
 
 	branch := fmt.Sprintf("ext/%s-%s", date, candidate.ID)
 	worktreePath := filepath.Join(runsDir, date, candidate.ID, "worktree")
-	outputDir := filepath.Join(runsDir, date, candidate.ID)
 
 	// Check daily budget and write initial state atomically so concurrent builds
 	// see each other's in-progress reservations before their own Claude run starts.
@@ -315,42 +321,37 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 		return fmt.Errorf("create worktree: %w", err)
 	}
 
-	logPrefix := "[" + candidate.ID + "] "
+	// Run Phase A.5: planning — generate plan.md before any code is written.
+	// Guard against overwriting an existing plan.md if we're resuming from a
+	// PhasePlanning crash that already wrote the file (e.g. Claude finished but
+	// the SaveState call below never completed). Mirrors the pattern used in
+	// approve-plan for stages.md.
+	planPath := filepath.Join(runsDir, date, candidate.ID, "plan.md")
+	if _, statErr := os.Stat(planPath); statErr != nil {
+		// plan.md doesn't exist yet — run planning.
+		bs.Phase = build.PhasePlanning
+		if err := build.SaveState(runsDir, bs); err != nil {
+			return fmt.Errorf("save planning state: %w", err)
+		}
 
-	// Run Phase B build.
-	buildResult, err := build.Run(build.Options{
-		Config:       opts.Config,
-		CandidateID:  candidate.ID,
-		JiraKey:      candidate.JiraKey,
-		SpecMD:       candidate.SpecMD,
-		Effort:       candidate.Effort,
-		Date:         date,
-		WorktreePath: worktreePath,
-		ScaffoldDir:  opts.ScaffoldDir,
-		ClaudeMDPath: opts.ClaudeMDPath,
-		LogPrefix:    logPrefix,
-	})
-	if err != nil {
-		bs.Phase = build.PhaseBlocked
-		bs.ErrorMsg = err.Error()
-		_ = build.SaveState(runsDir, bs)
-		return fmt.Errorf("build run: %w", err)
+		logf("planning: generating plan.md…\n")
+		if err := build.Plan(opts.Config, candidate.ID, candidate.SpecMD, planPath); err != nil {
+			bs.Phase = build.PhaseBlocked
+			bs.ErrorMsg = "planning failed: " + err.Error()
+			_ = build.SaveState(runsDir, bs)
+			return fmt.Errorf("plan %s: %w", candidate.ID, err)
+		}
+	} else {
+		logf("planning: plan.md already exists — skipping generation\n")
 	}
 
-	sessionID := buildResult.SessionID
-	bs.SessionID = sessionID
-	bs.CostUSD = buildResult.CostUSD
-	bs.Turns = buildResult.Turns
-	bs.Attempts = buildResult.Attempts
-	if bs.CostUSD > opts.Config.Claude.BudgetUSDPerBuild {
-		logf("build: warning: initial build cost $%.4f exceeds per-build budget of $%.2f\n",
-			bs.CostUSD, opts.Config.Claude.BudgetUSDPerBuild)
+	// Planning complete (or already done) — wait for human approval.
+	bs.Phase = build.PhasePlanReview
+	if err := build.SaveState(runsDir, bs); err != nil {
+		return fmt.Errorf("save plan-review state: %w", err)
 	}
-
-	bs.Phase = build.PhaseGating
-	_ = build.SaveState(runsDir, bs)
-
-	return gateRepairPublish(opts, date, candidate, bs, worktreePath, outputDir, sessionID, jiraClient)
+	logf("planning: plan written to %s — run `extctl approve-plan %s` to continue\n", planPath, candidate.ID)
+	return nil
 }
 
 // gateRepairPublish runs the gate → repair loop → publish tail.
