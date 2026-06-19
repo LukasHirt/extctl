@@ -193,88 +193,6 @@ var pollCmd = &cobra.Command{
 	},
 }
 
-// --- build command ---
-
-var buildCmd = &cobra.Command{
-	Use:   "build <candidate-id>",
-	Short: "Force-build a picked candidate (worktree → claude → gate → PR)",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		candidateID := args[0]
-
-		loc, err := time.LoadLocation(cfg.Timezone)
-		if err != nil {
-			return fmt.Errorf("load timezone: %w", err)
-		}
-		date := time.Now().In(loc).Format("2006-01-02")
-
-		// Look up the candidate from the latest slate.
-		slates, err := state.LoadAll(cfg.RunsDir)
-		if err != nil {
-			return fmt.Errorf("load slates: %w", err)
-		}
-		var candidate *state.Candidate
-		for i := len(slates) - 1; i >= 0; i-- {
-			for j := range slates[i].Candidates {
-				c := &slates[i].Candidates[j]
-				if c.ID == candidateID || c.JiraKey == candidateID {
-					candidate = c
-					date = slates[i].Date
-					break
-				}
-			}
-			if candidate != nil {
-				break
-			}
-		}
-		if candidate == nil {
-			return fmt.Errorf("candidate %q not found in any slate", candidateID)
-		}
-
-		jiraToken, err := config.JiraToken()
-		if err != nil {
-			return err
-		}
-		jiraEmail, err := config.JiraEmail()
-		if err != nil {
-			return err
-		}
-
-		branch := fmt.Sprintf("ext/%s-%s", date, candidate.ID)
-		worktreePath := filepath.Join(cfg.RunsDir, date, candidate.ID, "worktree")
-
-		if err := gitpkg.FetchOrigin(cfg.TargetRepo.Checkout); err != nil {
-			return fmt.Errorf("git fetch: %w", err)
-		}
-		baseBranch := "origin/" + cfg.DefaultBranch
-		if err := gitpkg.CreateWorktree(cfg.TargetRepo.Checkout, worktreePath, branch, baseBranch); err != nil {
-			return fmt.Errorf("create worktree: %w", err)
-		}
-
-		result, err := build.Run(build.Options{
-			Config:       cfg,
-			CandidateID:  candidate.ID,
-			JiraKey:      candidate.JiraKey,
-			SpecMD:       candidate.SpecMD,
-			Effort:       candidate.Effort,
-			Date:         date,
-			WorktreePath: worktreePath,
-		})
-		if err != nil {
-			return err
-		}
-
-		// Use the same jira client that poll.Run would use (just for the build cmd).
-		_ = jiraToken
-		_ = jiraEmail
-		fmt.Printf("\nbuild done: cost $%.4f · turns %d · session %s\n",
-			result.CostUSD, result.Turns, result.SessionID)
-		fmt.Printf("result: %s\n",
-			filepath.Join(cfg.RunsDir, date, candidate.ID, "result.json"))
-		return nil
-	},
-}
-
 // --- scaffold command ---
 
 var scaffoldCmd = &cobra.Command{
@@ -795,7 +713,7 @@ func init() {
 
 	slateCmd.AddCommand(slateStatusCmd, slateCarryoversCmd)
 	scaffoldCmd.AddCommand(scaffoldFetchCmd)
-	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, buildCmd, gateCmd, scaffoldCmd, approvePlanCmd, approveStagesCmd, versionCmd)
+	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, scaffoldCmd, approvePlanCmd, approveStagesCmd, versionCmd)
 }
 
 func main() {

@@ -56,7 +56,6 @@ type Prompts struct {
 	GenSpecs     string `yaml:"gen_specs"`
 	Plan         string `yaml:"plan"`
 	DeriveStages string `yaml:"derive_stages"`
-	Build        string `yaml:"build"`
 	BuildStage   string `yaml:"build_stage"`
 	Repair       string `yaml:"repair"`
 	Revise       string `yaml:"revise"`
@@ -121,9 +120,6 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Prompts.DeriveStages == "" {
 		c.Prompts.DeriveStages = "prompts/derive-stages.md"
-	}
-	if c.Prompts.Build == "" {
-		c.Prompts.Build = "prompts/build-extension.md"
 	}
 	if c.Prompts.BuildStage == "" {
 		c.Prompts.BuildStage = "prompts/build-stage.md"

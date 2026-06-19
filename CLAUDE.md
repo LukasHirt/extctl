@@ -36,7 +36,6 @@ internal/
     stage.go                # BuildStage() – per-stage build orchestration
 prompts/
   gen-specs.md              # Phase A prompt (read-only, grounded in web-extensions)
-  build-extension.md        # Phase B prompt (builds the picked candidate)
   plan-extension.md         # planning prompt (Read/Grep/Glob/Write)
   derive-stages.md          # stage derivation prompt (Read/Write)
   build-stage.md            # per-stage build prompt
@@ -75,8 +74,6 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
   sets the candidate state to `plan_review`.
 - `extctl poll --dry-run` — shows candidates in each build state without
   triggering any Claude invocations or Jira transitions.
-- `extctl build <id>` — manually triggers the planning phase for a specific
-  candidate (same as poll but for one candidate by ID).
 - `extctl approve-plan <id>` — reads the approved `plan.md`, runs Claude with
   `derive-stages.md` to write `runs/<date>/<id>/stages.md`, sets state to
   `stages_review`.

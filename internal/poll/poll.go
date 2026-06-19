@@ -355,7 +355,7 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 }
 
 // gateRepairPublish runs the gate → repair loop → publish tail.
-// Called both after a fresh build.Run and when resuming a PhaseGating/PhaseRepairing build.
+// Called after BuildStage and when resuming a PhaseGating/PhaseRepairing build.
 func gateRepairPublish(opts Options, date string, candidate state.Candidate, bs *build.State, worktreePath, outputDir, sessionID string, jiraClient *jira.Client) error {
 	runsDir := opts.Config.RunsDir
 	logf := func(format string, args ...any) {
