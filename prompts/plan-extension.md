@@ -17,9 +17,22 @@ permitted write action is writing the plan document to `{{PLAN_PATH}}`.
 
 ---
 
+## Issue Comments
+
+The following comments were left on the Jira issue before it entered the build
+pipeline. They are listed in chronological order — replies appear directly after
+the comment they respond to and may refine, scope-down, or override it. Read the
+full thread before drawing any conclusions; a later comment takes precedence over
+an earlier one on the same point. Treat the resulting consensus as a binding
+constraint that overrides or refines the original spec.
+
+{{ISSUE_COMMENTS}}
+
+---
+
 ## Your task
 
-1. **Understand the spec.** Read everything above carefully.
+1. **Understand the spec and issue comments.** Read everything above carefully.
 
 2. **Explore the repository.** Use Read, Grep, and Glob to understand:
    - The overall repository structure (package layout, monorepo setup,

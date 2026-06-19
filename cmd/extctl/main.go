@@ -323,7 +323,7 @@ var approvePlanCmd = &cobra.Command{
 		// Run stage derivation — skip if stages.md already exists (crash-resume).
 		stagesPath := filepath.Join(cfg.RunsDir, date, candidate.ID, "stages.md")
 		if _, statErr := os.Stat(stagesPath); statErr != nil {
-			if err := build.DeriveStages(cfg, candidate.ID, planPath, stagesPath); err != nil {
+			if err := build.DeriveStages(cfg, candidate.ID, planPath, stagesPath, candidate.IssueComments); err != nil {
 				bs.Phase = build.PhaseBlocked
 				bs.ErrorMsg = "stage derivation failed: " + err.Error()
 				_ = build.SaveState(cfg.RunsDir, bs)
@@ -473,19 +473,20 @@ var approveStagesCmd = &cobra.Command{
 
 			if !skipBuild {
 				result, err := build.BuildStage(build.StageOptions{
-					Config:       cfg,
-					CandidateID:  candidate.ID,
-					Title:        candidate.Title,
-					Effort:       candidate.Effort,
-					SpecMD:       candidate.SpecMD,
-					PlanPath:     planPath,
-					StagesPath:   stagesPath,
-					StageNum:     stageNum,
-					TotalStages:  len(stages),
-					StageDesc:    stageDesc,
-					WorktreePath: worktreePath,
-					Date:         date,
-					SessionID:    sessionID,
+					Config:        cfg,
+					CandidateID:   candidate.ID,
+					Title:         candidate.Title,
+					Effort:        candidate.Effort,
+					SpecMD:        candidate.SpecMD,
+					IssueComments: candidate.IssueComments,
+					PlanPath:      planPath,
+					StagesPath:    stagesPath,
+					StageNum:      stageNum,
+					TotalStages:   len(stages),
+					StageDesc:     stageDesc,
+					WorktreePath:  worktreePath,
+					Date:          date,
+					SessionID:     sessionID,
 				})
 				if err != nil {
 					bs.Phase = build.PhaseBlocked

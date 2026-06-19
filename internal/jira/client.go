@@ -156,6 +156,39 @@ func (c *Client) AddComment(issueKey, body string) error {
 	return nil
 }
 
+// Comment is a single comment on a Jira issue.
+type Comment struct {
+	Author  string
+	Body    string
+	Created string
+}
+
+// GetComments returns all comments on an issue in chronological order.
+// Replies appear as sequential comments after the one they respond to.
+func (c *Client) GetComments(issueKey string) ([]Comment, error) {
+	var result struct {
+		Comments []struct {
+			Author struct {
+				DisplayName string `json:"displayName"`
+			} `json:"author"`
+			Body    string `json:"body"`
+			Created string `json:"created"`
+		} `json:"comments"`
+	}
+	if err := c.get(fmt.Sprintf("/rest/api/2/issue/%s/comment", issueKey), &result); err != nil {
+		return nil, fmt.Errorf("get comments for %s: %w", issueKey, err)
+	}
+	out := make([]Comment, 0, len(result.Comments))
+	for _, c := range result.Comments {
+		out = append(out, Comment{
+			Author:  c.Author.DisplayName,
+			Body:    c.Body,
+			Created: c.Created,
+		})
+	}
+	return out, nil
+}
+
 // --- HTTP helpers ---
 
 func (c *Client) get(path string, out any) error {

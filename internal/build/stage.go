@@ -12,20 +12,21 @@ import (
 
 // StageOptions configures a per-stage Claude build run.
 type StageOptions struct {
-	Config       *config.Config
-	CandidateID  string
-	Title        string // display title of the extension
-	Effort       string // S | M | L
-	SpecMD       string
-	PlanPath     string // absolute path to plan.md
-	StagesPath   string // absolute path to stages.md
-	StageNum     int    // 1-indexed current stage number
-	TotalStages  int
-	StageDesc    string // description from stages.md for this stage
-	WorktreePath string // absolute path to git worktree
-	Date         string // YYYY-MM-DD
-	LogPrefix    string
-	SessionID    string // empty for stage 1; prior stage's session_id for stage 2+
+	Config        *config.Config
+	CandidateID   string
+	Title         string // display title of the extension
+	Effort        string // S | M | L
+	SpecMD        string
+	IssueComments string // formatted Jira issue comments fetched at pick time
+	PlanPath      string // absolute path to plan.md
+	StagesPath    string // absolute path to stages.md
+	StageNum      int    // 1-indexed current stage number
+	TotalStages   int
+	StageDesc     string // description from stages.md for this stage
+	WorktreePath  string // absolute path to git worktree
+	Date          string // YYYY-MM-DD
+	LogPrefix     string
+	SessionID     string // empty for stage 1; prior stage's session_id for stage 2+
 }
 
 func (opts StageOptions) logf(format string, args ...any) {
@@ -44,15 +45,16 @@ func BuildStage(opts StageOptions) (*RunResult, error) {
 	}
 
 	prompt := renderTemplate(string(promptBytes), map[string]string{
-		"{{EXT_ID}}":      opts.CandidateID,
-		"{{EXT_TITLE}}":   opts.Title,
-		"{{EFFORT}}":      opts.Effort,
-		"{{SPEC_MD}}":     opts.SpecMD,
-		"{{PLAN_PATH}}":   opts.PlanPath,
-		"{{STAGES_PATH}}": opts.StagesPath,
-		"{{STAGE_NUM}}":   strconv.Itoa(opts.StageNum),
-		"{{TOTAL_STAGES}}": strconv.Itoa(opts.TotalStages),
-		"{{STAGE_DESC}}":  opts.StageDesc,
+		"{{EXT_ID}}":         opts.CandidateID,
+		"{{EXT_TITLE}}":      opts.Title,
+		"{{EFFORT}}":         opts.Effort,
+		"{{SPEC_MD}}":        opts.SpecMD,
+		"{{ISSUE_COMMENTS}}": opts.IssueComments,
+		"{{PLAN_PATH}}":      opts.PlanPath,
+		"{{STAGES_PATH}}":    opts.StagesPath,
+		"{{STAGE_NUM}}":      strconv.Itoa(opts.StageNum),
+		"{{TOTAL_STAGES}}":   strconv.Itoa(opts.TotalStages),
+		"{{STAGE_DESC}}":     opts.StageDesc,
 	})
 
 	outputFile := filepath.Join(
