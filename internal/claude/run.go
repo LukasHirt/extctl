@@ -68,7 +68,7 @@ func Run(opts RunOptions) (*Result, error) {
 	if opts.Resume != "" {
 		args = append(args, "--resume", opts.Resume)
 	}
-	args = append(args, "--output-format", "stream-json")
+	args = append(args, "--verbose", "--output-format", "stream-json")
 
 	cmd := exec.Command("claude", args...)
 	if opts.WorkDir != "" {
