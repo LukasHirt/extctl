@@ -19,7 +19,7 @@ Your task is to fix the failing stage(s) and recommit.
 3. Do NOT modify or delete `acceptance.spec.ts` to make tests pass — fix the implementation instead.
 4. Do NOT weaken lint rules or add `// eslint-disable` to silence errors.
 5. Do NOT add `.only`, `.skip`, or `test.todo` to acceptance tests.
-6. Touch ONLY `extensions/{{EXT_ID}}/`. Never edit other extensions or pipeline files.
+6. Touch ONLY `packages/web-app-{{EXT_ID}}/`. Never edit other packages or pipeline files.
 7. No hardcoded provider hostnames, API keys, or secrets.
 
 ## After fixing
@@ -27,7 +27,7 @@ Your task is to fix the failing stage(s) and recommit.
 Run the following and ensure all pass before committing:
 
 ```bash
-cd extensions/{{EXT_ID}}
+cd packages/web-app-{{EXT_ID}}
 pnpm install --frozen-lockfile
 pnpm build
 pnpm lint
@@ -38,11 +38,11 @@ pnpm test
 Then commit:
 
 ```bash
-git add extensions/{{EXT_ID}}/
-git status   # verify only extensions/{{EXT_ID}}/ is staged
+git add packages/web-app-{{EXT_ID}}/
+git status   # verify only packages/web-app-{{EXT_ID}}/ is staged
 git commit -m "fix(web-app-{{EXT_ID}}): repair failing stage"
 ```
 
-Do not commit anything outside `extensions/{{EXT_ID}}/`.
+Do not commit anything outside `packages/web-app-{{EXT_ID}}/`.
 
 You are done when the build, lint, typecheck, and test all pass and the fix is committed.

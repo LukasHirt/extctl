@@ -27,7 +27,7 @@ log() { echo "[gate] $*" | tee -a "$LOG"; }
 stage_ok() { log "PASS $1"; }
 stage_fail() { log "FAIL $1: $2"; }
 
-EXT_DIR="$WORKTREE/extensions/$EXT_ID"
+EXT_DIR="$WORKTREE/packages/web-app-$EXT_ID"
 
 # Track per-stage results
 hygiene_result="fail"
@@ -70,11 +70,11 @@ if ( cd "$WORKTREE" && git status --porcelain | grep -q . ); then
   write_json false; exit 1
 fi
 
-# Diff must be confined to extensions/<ext-id>/.
+# Diff must be confined to packages/web-app-<ext-id>/.
 DIFF_FILES=$(cd "$WORKTREE" && git diff HEAD~1 --name-only 2>/dev/null || git diff --name-only HEAD)
-OUTSIDE=$(echo "$DIFF_FILES" | grep -v "^extensions/$EXT_ID/" || true)
+OUTSIDE=$(echo "$DIFF_FILES" | grep -v "^packages/web-app-$EXT_ID/" || true)
 if [ -n "$OUTSIDE" ]; then
-  stage_fail hygiene "diff contains files outside extensions/$EXT_ID/: $OUTSIDE"
+  stage_fail hygiene "diff contains files outside packages/web-app-$EXT_ID/: $OUTSIDE"
   write_json false; exit 1
 fi
 
