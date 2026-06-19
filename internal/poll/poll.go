@@ -322,21 +322,30 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 	}
 
 	// Run Phase A.5: planning — generate plan.md before any code is written.
+	// Guard against overwriting an existing plan.md if we're resuming from a
+	// PhasePlanning crash that already wrote the file (e.g. Claude finished but
+	// the SaveState call below never completed). Mirrors the pattern used in
+	// approve-plan for stages.md.
 	planPath := filepath.Join(runsDir, date, candidate.ID, "plan.md")
-	bs.Phase = build.PhasePlanning
-	if err := build.SaveState(runsDir, bs); err != nil {
-		return fmt.Errorf("save planning state: %w", err)
+	if _, statErr := os.Stat(planPath); statErr != nil {
+		// plan.md doesn't exist yet — run planning.
+		bs.Phase = build.PhasePlanning
+		if err := build.SaveState(runsDir, bs); err != nil {
+			return fmt.Errorf("save planning state: %w", err)
+		}
+
+		logf("planning: generating plan.md…\n")
+		if err := build.Plan(opts.Config, candidate.ID, candidate.SpecMD, planPath); err != nil {
+			bs.Phase = build.PhaseBlocked
+			bs.ErrorMsg = "planning failed: " + err.Error()
+			_ = build.SaveState(runsDir, bs)
+			return fmt.Errorf("plan %s: %w", candidate.ID, err)
+		}
+	} else {
+		logf("planning: plan.md already exists — skipping generation\n")
 	}
 
-	logf("planning: generating plan.md…\n")
-	if err := build.Plan(opts.Config, candidate.ID, candidate.SpecMD, planPath); err != nil {
-		bs.Phase = build.PhaseBlocked
-		bs.ErrorMsg = "planning failed: " + err.Error()
-		_ = build.SaveState(runsDir, bs)
-		return fmt.Errorf("plan %s: %w", candidate.ID, err)
-	}
-
-	// Planning complete — wait for human approval before proceeding to build.
+	// Planning complete (or already done) — wait for human approval.
 	bs.Phase = build.PhasePlanReview
 	if err := build.SaveState(runsDir, bs); err != nil {
 		return fmt.Errorf("save plan-review state: %w", err)

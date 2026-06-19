@@ -506,6 +506,12 @@ var approveStagesCmd = &cobra.Command{
 		planPath := filepath.Join(cfg.RunsDir, date, candidate.ID, "plan.md")
 		worktreePath := filepath.Join(cfg.RunsDir, date, candidate.ID, "worktree")
 
+		// Capture entry phase and stage before we overwrite bs.Phase below.
+		// Used in the per-stage loop to skip BuildStage when resuming from a
+		// gate/repair crash that already produced a Claude session.
+		entryPhase := bs.Phase
+		resumeStage := bs.CurrentStage
+
 		// Transition to building phase, set stage counters.
 		bs.Phase = build.PhaseBuilding
 		bs.TotalStages = len(stages)
@@ -540,32 +546,41 @@ var approveStagesCmd = &cobra.Command{
 
 			fmt.Printf("[%s] building stage %d/%d: %s\n", candidate.ID, stageNum, len(stages), stageDesc)
 
-			result, err := build.BuildStage(build.StageOptions{
-				Config:       cfg,
-				CandidateID:  candidate.ID,
-				Title:        candidate.Title,
-				Effort:       candidate.Effort,
-				SpecMD:       candidate.SpecMD,
-				PlanPath:     planPath,
-				StagesPath:   stagesPath,
-				StageNum:     stageNum,
-				TotalStages:  len(stages),
-				StageDesc:    stageDesc,
-				WorktreePath: worktreePath,
-				Date:         date,
-				SessionID:    sessionID,
-			})
-			if err != nil {
-				bs.Phase = build.PhaseBlocked
-				bs.ErrorMsg = err.Error()
-				_ = build.SaveState(cfg.RunsDir, bs)
-				return fmt.Errorf("stage %d: %w", stageNum, err)
-			}
+			// Only run BuildStage if we're not resuming from a gate/repair crash
+			// at this specific stage. If the crash happened after BuildStage produced
+			// a commit but before the gate completed, the session is already in
+			// bs.SessionID — skip straight to the gate to avoid duplicate commits.
+			skipBuild := (stageNum == resumeStage) &&
+				(entryPhase == build.PhaseGating || entryPhase == build.PhaseRepairing)
 
-			sessionID = result.SessionID
-			bs.SessionID = sessionID
-			bs.CostUSD += result.CostUSD
-			bs.Turns += result.Turns
+			if !skipBuild {
+				result, err := build.BuildStage(build.StageOptions{
+					Config:       cfg,
+					CandidateID:  candidate.ID,
+					Title:        candidate.Title,
+					Effort:       candidate.Effort,
+					SpecMD:       candidate.SpecMD,
+					PlanPath:     planPath,
+					StagesPath:   stagesPath,
+					StageNum:     stageNum,
+					TotalStages:  len(stages),
+					StageDesc:    stageDesc,
+					WorktreePath: worktreePath,
+					Date:         date,
+					SessionID:    sessionID,
+				})
+				if err != nil {
+					bs.Phase = build.PhaseBlocked
+					bs.ErrorMsg = err.Error()
+					_ = build.SaveState(cfg.RunsDir, bs)
+					return fmt.Errorf("stage %d: %w", stageNum, err)
+				}
+
+				sessionID = result.SessionID
+				bs.SessionID = sessionID
+				bs.CostUSD += result.CostUSD
+				bs.Turns += result.Turns
+			}
 
 			// Run gate after each stage.
 			bs.Phase = build.PhaseGating
