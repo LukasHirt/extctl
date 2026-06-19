@@ -7,9 +7,10 @@ candidate generation for ownCloud. Every workday it:
 
 1. **Phase A (morning):** generates 3 agentic extension specs via Claude Code
    headless, creates Jira issues for human review.
-2. **Phase B (event-driven):** polls Jira for picks, builds all chosen
-   extensions concurrently into reviewable GitHub PRs using Claude Code
-   headless + a validation gate.
+2. **Phase B (event-driven):** polls Jira for picks, runs a human-in-the-loop
+   planning phase (plan → plan review → stages → stage review), then builds
+   all chosen extensions stage by stage into reviewable GitHub PRs using
+   Claude Code headless + a per-stage validation gate.
 
 The manager can pick one or more candidates (by moving them to "Doing" in
 Jira); all picked candidates are built concurrently. Phase A and Phase B are
@@ -29,9 +30,16 @@ internal/
     client.go               # Jira Cloud REST v2 client (Basic auth)
     format.go               # issue body + summary formatters
   gen/gen.go                # Phase A orchestrator (the core of `extctl gen`)
+  build/
+    plan.go                 # Plan() – planning phase orchestration
+    stages.go               # DeriveStages/ParseStages/CheckStage/AppendDocStage
+    stage.go                # BuildStage() – per-stage build orchestration
 prompts/
   gen-specs.md              # Phase A prompt (read-only, grounded in web-extensions)
   build-extension.md        # Phase B prompt (builds the picked candidate)
+  plan-extension.md         # planning prompt (Read/Grep/Glob/Write)
+  derive-stages.md          # stage derivation prompt (Read/Write)
+  build-stage.md            # per-stage build prompt
 idea-pool.yaml              # seed ideas for the spec generator
 extctl.example.yaml         # config template (copy to extctl.yaml, never commit)
 ```
@@ -62,6 +70,21 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
 - `extctl slate status` — shows latest slate.
 - `extctl slate carryovers [--format=dedup-hint]` — lists live carryovers.
 - `extctl version` — prints version.
+- `extctl poll` — polls Jira for picks; on a pick, creates a worktree, runs
+  Claude with `plan-extension.md` to write `runs/<date>/<id>/plan.md`, and
+  sets the candidate state to `plan_review`.
+- `extctl poll --dry-run` — shows candidates in each build state without
+  triggering any Claude invocations or Jira transitions.
+- `extctl build <id>` — manually triggers the planning phase for a specific
+  candidate (same as poll but for one candidate by ID).
+- `extctl approve-plan <id>` — reads the approved `plan.md`, runs Claude with
+  `derive-stages.md` to write `runs/<date>/<id>/stages.md`, sets state to
+  `stages_review`.
+- `extctl approve-stages <id>` — reads the approved `stages.md` and builds
+  each stage in sequence: Claude runs `build-stage.md` per stage, the gate
+  runs after each stage, and on full pass the branch is pushed and a GitHub PR
+  is opened. State progresses through `building` → `gated` → `publishing` →
+  `done`.
 
 ## What's next (in priority order)
 
@@ -92,30 +115,13 @@ reason, produces exactly 1 new spec. Currently done manually by re-running
 with `{{N}}=1` substitution in the shell; this should be a first-class
 command.
 
-### 3. Poll loop — `extctl poll`
-Polls Jira every N minutes during business hours. When it detects one or more
-candidate issues transitioned to the pick status ("Doing"), it builds all of
-them concurrently (each in its own git worktree). For each picked candidate:
-1. Creates a `git worktree` on `target_repo.checkout` for the picked branch
-3. Copies scaffold + CLAUDE.md into `extensions/<id>/`
-4. Runs `claude -p` with `build-extension.md` prompt (Phase B)
-5. Runs the gate (`gate/run-gate.sh`)
-6. On pass: pushes branch, opens GitHub PR, transitions Jira issue to build
-   status ("In Review")
-7. On fail after one repair attempt: transitions to blocked status, comments
-   failure summary on the issue
-8. Updates `runs/<date>/slate.json` with build outcome
-
-The poll loop is the biggest remaining piece. Design it as an idempotent
-reconciliation loop (check desired state vs observed state, do only the
-missing work) so it's safe to restart.
-
-### 4. Scheduling
+### 3. Scheduling
 - macOS: launchd plist, Mon–Fri 06:30 → `extctl gen`, business hours every
   10 min → `extctl poll`, login hook → `extctl reconcile`
 - Linux: systemd user timers (same schedule)
 - `extctl reconcile` — idempotent catch-up: runs gen if today's slate is
-  missing, runs poll pass if any candidate is in "Doing" state
+  missing, runs poll pass if any candidate is in "Doing" or `plan_review` /
+  `stages_review` state awaiting human action
 
 ## Conventions
 
@@ -125,12 +131,19 @@ outside of `main()` init.
 **State writes:** always write to a temp file then `os.Rename()` — see
 `state.Save()` for the pattern. Never partial writes.
 
-**Claude invocations:** always scoped tools, never open-ended Bash. For
-Phase A: `Read,Grep,Glob` only. For Phase B:
-`Read,Edit,Write,Grep,Glob,Bash(pnpm install),Bash(pnpm build),
-Bash(pnpm test *),Bash(pnpm lint *),Bash(git add *),Bash(git commit *),
-Bash(git status),Bash(git diff *)`. No `git push`, no `gh`, no network
-tools — those are always orchestrator actions.
+**Claude invocations:** always scoped tools, never open-ended Bash. Tool
+allowlists by prompt:
+
+- Phase A (`gen-specs.md`): `Read,Grep,Glob`
+- Planning (`plan-extension.md`): `Read,Grep,Glob,Write`
+- Stage derivation (`derive-stages.md`): `Read,Write`
+- Per-stage build (`build-stage.md`):
+  `Read,Edit,Write,Grep,Glob,Bash(pnpm install),Bash(pnpm build),
+  Bash(pnpm test *),Bash(pnpm lint *),Bash(git add *),Bash(git commit *),
+  Bash(git status),Bash(git diff *)`
+
+No `git push`, no `gh`, no network tools — those are always orchestrator
+actions.
 
 **Jira transitions:** always look up the transition ID by name at runtime
 (see `client.Transition()`) — never hardcode transition IDs, they vary per
