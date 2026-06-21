@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LukasHirt/extctl/internal/build"
-	"github.com/LukasHirt/extctl/internal/claude"
 	"github.com/LukasHirt/extctl/internal/config"
 	"github.com/LukasHirt/extctl/internal/gate"
 	"github.com/LukasHirt/extctl/internal/gen"
@@ -639,11 +638,14 @@ var approveStagesCmd = &cobra.Command{
 			gateLint = bs.Gate.Stages.Lint
 			gateUnit = bs.Gate.Stages.Unit
 		}
-		whatWasBuilt := ""
-		lastStageJSONL := filepath.Join(outputDir, fmt.Sprintf("stage-%d.jsonl", len(stages)))
-		if r, loadErr := claude.LoadResult(lastStageJSONL); loadErr == nil {
-			whatWasBuilt = r.Result
-		}
+		whatWasBuilt := build.SynthesizeSummary(build.SummarizeOptions{
+			Config:      cfg,
+			CandidateID: candidate.ID,
+			Date:        date,
+			SpecMD:      candidate.SpecMD,
+			OutputDir:   outputDir,
+			TotalStages: len(stages),
+		})
 		prBody := githubpkg.FormatBody(githubpkg.BodyOptions{
 			SpecMD:       candidate.SpecMD,
 			WhatWasBuilt: whatWasBuilt,
