@@ -236,7 +236,7 @@ var gateCmd = &cobra.Command{
 			return err
 		}
 
-		result, err := gate.Run(scriptPath, worktreePath, candidateID, outputDir, 1)
+		result, err := gate.Run(scriptPath, worktreePath, candidateID, outputDir, 1, cfg.TargetRepo.Checkout)
 		if err != nil {
 			return err
 		}
@@ -244,9 +244,9 @@ var gateCmd = &cobra.Command{
 			fmt.Printf("gate PASSED (score %.2f)\n", result.Score)
 		} else {
 			fmt.Printf("gate FAILED\n")
-			fmt.Printf("stages: hygiene=%s build=%s lint=%s unit=%s\n",
+			fmt.Printf("stages: hygiene=%s build=%s lint=%s unit=%s e2e=%s\n",
 				result.Stages.Hygiene, result.Stages.Build,
-				result.Stages.Lint, result.Stages.Unit)
+				result.Stages.Lint, result.Stages.Unit, result.Stages.E2E)
 			gateLog, _ := gate.ReadLog(outputDir)
 			if gateLog != "" {
 				fmt.Printf("\ngate.log:\n%s\n", gateLog)
@@ -525,7 +525,7 @@ var approveStagesCmd = &cobra.Command{
 			_ = build.SaveState(cfg.RunsDir, bs)
 
 			bulletCount := countSpecBullets(candidate.SpecMD)
-			gateResult, gateErr := gate.Run(absGateScript, worktreePath, candidate.ID, outputDir, bulletCount)
+			gateResult, gateErr := gate.Run(absGateScript, worktreePath, candidate.ID, outputDir, bulletCount, cfg.TargetRepo.Checkout)
 			if gateErr != nil {
 				bs.Phase = build.PhaseBlocked
 				bs.ErrorMsg = "gate error: " + gateErr.Error()
@@ -540,6 +540,7 @@ var approveStagesCmd = &cobra.Command{
 					Build:   gateResult.Stages.Build,
 					Lint:    gateResult.Stages.Lint,
 					Unit:    gateResult.Stages.Unit,
+					E2E:     gateResult.Stages.E2E,
 				},
 			}
 
@@ -584,7 +585,7 @@ var approveStagesCmd = &cobra.Command{
 				bs.Phase = build.PhaseGating
 				_ = build.SaveState(cfg.RunsDir, bs)
 
-				gateResult, gateErr = gate.Run(absGateScript, worktreePath, candidate.ID, outputDir, bulletCount)
+				gateResult, gateErr = gate.Run(absGateScript, worktreePath, candidate.ID, outputDir, bulletCount, cfg.TargetRepo.Checkout)
 				if gateErr != nil {
 					bs.Phase = build.PhaseBlocked
 					bs.ErrorMsg = "gate error after repair: " + gateErr.Error()
@@ -599,6 +600,7 @@ var approveStagesCmd = &cobra.Command{
 						Build:   gateResult.Stages.Build,
 						Lint:    gateResult.Stages.Lint,
 						Unit:    gateResult.Stages.Unit,
+						E2E:     gateResult.Stages.E2E,
 					},
 				}
 			}
@@ -630,13 +632,14 @@ var approveStagesCmd = &cobra.Command{
 		}
 
 		gateScore := 0.0
-		gateHygiene, gateBuild, gateLint, gateUnit := "", "", "", ""
+		gateHygiene, gateBuild, gateLint, gateUnit, gateE2E := "", "", "", "", ""
 		if bs.Gate != nil {
 			gateScore = bs.Gate.Score
 			gateHygiene = bs.Gate.Stages.Hygiene
 			gateBuild = bs.Gate.Stages.Build
 			gateLint = bs.Gate.Stages.Lint
 			gateUnit = bs.Gate.Stages.Unit
+			gateE2E = bs.Gate.Stages.E2E
 		}
 		whatWasBuilt := build.SynthesizeSummary(build.SummarizeOptions{
 			Config:      cfg,
@@ -656,6 +659,7 @@ var approveStagesCmd = &cobra.Command{
 			GateBuild:    gateBuild,
 			GateLint:     gateLint,
 			GateUnit:     gateUnit,
+			GateE2E:      gateE2E,
 			CostUSD:      bs.CostUSD,
 			Turns:        bs.Turns,
 			Attempts:     bs.Attempts,

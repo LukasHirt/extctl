@@ -463,13 +463,14 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 	}
 
 	gateScore := 0.0
-	gateHygiene, gateBuild, gateLint, gateUnit := "", "", "", ""
+	gateHygiene, gateBuild, gateLint, gateUnit, gateE2E := "", "", "", "", ""
 	if bs.Gate != nil {
 		gateScore = bs.Gate.Score
 		gateHygiene = bs.Gate.Stages.Hygiene
 		gateBuild = bs.Gate.Stages.Build
 		gateLint = bs.Gate.Stages.Lint
 		gateUnit = bs.Gate.Stages.Unit
+		gateE2E = bs.Gate.Stages.E2E
 	}
 	whatWasBuilt := build.SynthesizeSummary(build.SummarizeOptions{
 		Config:      opts.Config,
@@ -489,6 +490,7 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 		GateBuild:    gateBuild,
 		GateLint:     gateLint,
 		GateUnit:     gateUnit,
+		GateE2E:      gateE2E,
 		CostUSD:      bs.CostUSD,
 		Turns:        bs.Turns,
 		Attempts:     bs.Attempts,
@@ -566,6 +568,7 @@ func publishBlocked(opts Options, date string, candidate state.Candidate, bs *bu
 		GateBuild:    gateResult.Stages.Build,
 		GateLint:     gateResult.Stages.Lint,
 		GateUnit:     gateResult.Stages.Unit,
+		GateE2E:      gateResult.Stages.E2E,
 		CostUSD:      bs.CostUSD,
 		Turns:        bs.Turns,
 		Attempts:     bs.Attempts,
@@ -591,11 +594,11 @@ func publishBlocked(opts Options, date string, candidate state.Candidate, bs *bu
 	failComment := fmt.Sprintf(
 		"## Automated repair exhausted\n\nThe pipeline ran %d repair attempt(s) and the gate still failed.\n"+
 			"**Manual fix required** — review the gate output below and push a fix commit.\n\n"+
-			"### Gate stages\n\n| Stage | Result |\n|---|---|\n| hygiene | %s |\n| build | %s |\n| lint | %s |\n| unit | %s |\n\n"+
+			"### Gate stages\n\n| Stage | Result |\n|---|---|\n| hygiene | %s |\n| build | %s |\n| lint | %s |\n| unit | %s |\n| e2e | %s |\n\n"+
 			"<details><summary>Gate log</summary>\n\n```\n%s\n```\n\n</details>",
 		bs.Attempts-1,
 		gateResult.Stages.Hygiene, gateResult.Stages.Build,
-		gateResult.Stages.Lint, gateResult.Stages.Unit,
+		gateResult.Stages.Lint, gateResult.Stages.Unit, gateResult.Stages.E2E,
 		truncate(gateLog, 3000),
 	)
 	if err := githubpkg.AddComment(opts.Config.TargetRepo.Remote, pr.Number, failComment); err != nil {
@@ -617,7 +620,7 @@ func runGate(opts Options, worktreePath, extID, outputDir, specMD string) (*gate
 	if err != nil {
 		return nil, fmt.Errorf("resolve gate script path: %w", err)
 	}
-	return gate.Run(absScript, worktreePath, extID, outputDir, bulletCount)
+	return gate.Run(absScript, worktreePath, extID, outputDir, bulletCount, opts.Config.TargetRepo.Checkout)
 }
 
 // countBullets counts bullet lines as a rough acceptance-bullet count.
@@ -675,6 +678,7 @@ func toStateGate(r *gate.Result) *build.GateResult {
 			Build:   r.Stages.Build,
 			Lint:    r.Stages.Lint,
 			Unit:    r.Stages.Unit,
+			E2E:     r.Stages.E2E,
 		},
 	}
 }

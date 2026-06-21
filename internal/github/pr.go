@@ -132,6 +132,7 @@ type BodyOptions struct {
 	GateBuild    string
 	GateLint     string
 	GateUnit     string
+	GateE2E      string // "ok" | "fail" | "skip" | ""
 	CostUSD      float64
 	Turns        int
 	Attempts     int
@@ -208,6 +209,9 @@ func FormatBody(opts BodyOptions) string {
 	if opts.GateUnit != "" {
 		fmt.Fprintf(&b, "| Unit tests | %s |\n", stageIcon(opts.GateUnit))
 	}
+	if opts.GateE2E != "" {
+		fmt.Fprintf(&b, "| E2E tests | %s |\n", stageIcon(opts.GateE2E))
+	}
 	fmt.Fprintf(&b, "| **Score** | **%.2f** |\n\n", opts.GateScore)
 
 	effort := ""
@@ -232,6 +236,8 @@ func stageIcon(verdict string) string {
 		return "✅ ok"
 	case "fail":
 		return "❌ fail"
+	case "skip":
+		return "⏭️ skip"
 	default:
 		return verdict
 	}

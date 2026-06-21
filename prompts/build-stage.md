@@ -59,6 +59,35 @@ what is described for stage {{STAGE_NUM}}.
 - Do NOT touch any files outside `packages/web-app-{{EXT_ID}}/`.
 - Do NOT push to remote. Do NOT open pull requests.
 
+## Acceptance test rules
+
+`tests/e2e/acceptance.spec.ts` is executed by the gate against a live oCIS
+instance. Write real tests that log in, navigate, and assert visible state.
+
+**Required:**
+- Import shared helpers from `../../../../support/` — `loginAsUser`/`logout` from
+  `helpers/authHelper`, `FilesPage`/`FilesAppBar` from `pages/`. Read these files first.
+- Every `test()` block must contain at least one assertion that can actually fail
+  (e.g. `await expect(page.locator('...')).toBeVisible()`).
+- Put extension-specific page objects in this extension's own `tests/e2e/pages/`
+  directory — NOT in the shared `support/pages/` root. The gate forbids writing
+  outside `packages/web-app-{{EXT_ID}}/`.
+- Mock LLM HTTP calls with `page.route()` so tests need no live LLM endpoint:
+  ```typescript
+  await page.route('**/ai-llm-proxy/**', route =>
+    route.fulfill({ body: JSON.stringify({ choices: [{ message: { content: 'mock result' } }] }) })
+  )
+  ```
+
+**Forbidden:**
+- `expect(page).toBeDefined()` or any `expect(<variable>).toBeDefined()` — always true.
+- `expect(true).toBe(true)` or other tautologies.
+- `.only()` / `.skip()` modifiers.
+- Writing files anywhere outside `packages/web-app-{{EXT_ID}}/`.
+
+See `packages/web-app-unzip/tests/e2e/` and `packages/web-app-file-comments/tests/e2e/`
+for real examples.
+
 ## After implementation
 
 Run the following checks in order and fix any errors before committing:

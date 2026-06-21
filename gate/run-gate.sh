@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # gate/run-gate.sh — validation gate for a built extension
 #
-# Usage: run-gate.sh <worktree-path> <ext-id> <output-dir> [<spec-bullet-count>]
+# Usage: run-gate.sh <worktree-path> <ext-id> <output-dir> [<spec-bullet-count>] [<main-checkout>]
 #
 # Outputs:
 #   <output-dir>/gate.json  — per-stage verdicts + overall pass/fail
 #   <output-dir>/gate.log   — full log of all commands run
 #
-# Scope: hygiene + build + static + unit (no Docker/Playwright smoke — Phase 3)
+# Scope: hygiene + build + static + unit + e2e. The e2e stage runs Playwright
+# against the live oCIS started via docker-compose in <main-checkout>; it is
+# skipped when <main-checkout> is omitted.
 # Exit code: 0 if all stages pass, 1 if any stage fails.
 
 set -euo pipefail
@@ -16,6 +18,7 @@ WORKTREE="$1"
 EXT_ID="$2"
 OUTPUT_DIR="$3"
 SPEC_BULLET_COUNT="${4:-1}"  # minimum expect() assertions required
+MAIN_CHECKOUT="${5:-}"       # web-extensions checkout running oCIS; empty = skip e2e
 
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)
@@ -34,6 +37,7 @@ hygiene_result="fail"
 build_result="fail"
 lint_result="fail"
 unit_result="fail"
+e2e_result="skip"  # "skip" when no main checkout is provided
 overall=false
 
 write_json() {
@@ -46,7 +50,8 @@ write_json() {
     "hygiene": "$hygiene_result",
     "build": "$build_result",
     "lint": "$lint_result",
-    "unit": "$unit_result"
+    "unit": "$unit_result",
+    "e2e": "$e2e_result"
   }
 }
 EOF
@@ -116,6 +121,13 @@ if grep -qE "\.(only|skip)\s*\(" "$ACCEPTANCE" 2>/dev/null; then
   write_json false; exit 1
 fi
 
+# Stub assertion guard: expect(<var>).toBeDefined() is always true and means
+# the test was never actually implemented.
+if grep -qE 'expect\s*\(\s*[a-zA-Z_$][a-zA-Z0-9_$]*\s*\)\s*\.toBeDefined\s*\(\s*\)' "$ACCEPTANCE" 2>/dev/null; then
+  stage_fail hygiene "acceptance.spec.ts contains stub assertions like expect(page).toBeDefined() — write real Playwright assertions that navigate, interact, and check visible state"
+  write_json false; exit 1
+fi
+
 hygiene_result="ok"
 stage_ok hygiene
 
@@ -167,6 +179,72 @@ fi
 
 unit_result="ok"
 stage_ok unit
+
+# ── Stage 5: e2e (Playwright against running oCIS) ───────────────────────────
+#
+# Skipped unless a main checkout is provided. oCIS only scans /web/apps at
+# startup, so the built extension is copied into the running container and the
+# container is restarted before Playwright runs.
+#
+# The stage is serialized across concurrent gate runs: parallel Playwright
+# sessions share the admin user and would clobber each other's test data, and
+# the container restart would disrupt a test mid-flight. flock is absent on
+# macOS, so we use a portable atomic mkdir lock with stale-owner recovery.
+
+if [ -n "$MAIN_CHECKOUT" ]; then
+  log ""
+  log "--- Stage 5: e2e ---"
+
+  E2E_LOCK="${TMPDIR:-/tmp}/extctl-gate-e2e.lock.d"
+  while ! mkdir "$E2E_LOCK" 2>/dev/null; do
+    # Steal a lock whose owner process is gone (mkdir locks, unlike flock, do
+    # not auto-release when the holder is killed).
+    owner=$(cat "$E2E_LOCK/pid" 2>/dev/null || echo "")
+    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+      log "e2e: stealing stale lock from dead pid $owner"
+      rm -rf "$E2E_LOCK"
+      continue
+    fi
+    log "e2e: waiting for lock held by another gate run…"
+    sleep 5
+  done
+  echo "$$" > "$E2E_LOCK/pid"
+  # Release the lock on any exit from here on, in addition to writing gate.json.
+  trap 'rmdir "$E2E_LOCK" 2>/dev/null || rm -rf "$E2E_LOCK" 2>/dev/null || true; write_json "$overall"' EXIT
+
+  CONTAINER=$(cd "$MAIN_CHECKOUT" && docker compose ps -q ocis 2>/dev/null || true)
+  if [ -z "$CONTAINER" ]; then
+    e2e_result="fail"
+    stage_fail e2e "oCIS not running in $MAIN_CHECKOUT — run: docker compose up -d"
+    write_json false; exit 1
+  fi
+
+  # Inject the built extension; oCIS only scans /web/apps at startup, so restart.
+  docker exec "$CONTAINER" mkdir -p "/web/apps/$EXT_ID" >> "$LOG" 2>&1
+  docker cp "$EXT_DIR/dist/." "$CONTAINER:/web/apps/$EXT_ID/" >> "$LOG" 2>&1
+  docker restart "$CONTAINER" >> "$LOG" 2>&1
+
+  OCIS_URL="https://host.docker.internal:9200"
+  for _ in $(seq 1 30); do
+    if curl -sk --max-time 2 "$OCIS_URL/health/live" | grep -q "alive"; then break; fi
+    sleep 2
+  done
+
+  if ! (cd "$EXT_DIR" && pnpm playwright test >> "$LOG" 2>&1); then
+    docker exec "$CONTAINER" rm -rf "/web/apps/$EXT_ID" >> "$LOG" 2>&1 || true
+    e2e_result="fail"
+    stage_fail e2e "playwright tests failed"
+    write_json false; exit 1
+  fi
+
+  docker exec "$CONTAINER" rm -rf "/web/apps/$EXT_ID" >> "$LOG" 2>&1 || true
+  e2e_result="ok"
+  stage_ok e2e
+
+  # Release the lock and restore the plain gate.json trap.
+  rm -rf "$E2E_LOCK" 2>/dev/null || true
+  trap 'write_json "$overall"' EXIT
+fi
 
 # ── All stages passed ─────────────────────────────────────────────────────────
 

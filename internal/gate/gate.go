@@ -14,6 +14,7 @@ type Stages struct {
 	Build   string `json:"build"`
 	Lint    string `json:"lint"`
 	Unit    string `json:"unit"`
+	E2E     string `json:"e2e"` // "ok" | "fail" | "skip"
 }
 
 // Result is the output of gate/run-gate.sh, read from gate.json.
@@ -27,12 +28,14 @@ type Result struct {
 // scriptPath is the absolute path to gate/run-gate.sh.
 // outputDir is where gate.json and gate.log will be written.
 // specBulletCount is the minimum number of expect() calls required in acceptance.spec.ts.
-func Run(scriptPath, worktreePath, extID, outputDir string, specBulletCount int) (*Result, error) {
+// mainCheckout is the web-extensions checkout running oCIS via docker-compose; when
+// empty the e2e stage is skipped.
+func Run(scriptPath, worktreePath, extID, outputDir string, specBulletCount int, mainCheckout string) (*Result, error) {
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir gate output dir: %w", err)
 	}
 
-	args := []string{worktreePath, extID, outputDir, fmt.Sprintf("%d", specBulletCount)}
+	args := []string{worktreePath, extID, outputDir, fmt.Sprintf("%d", specBulletCount), mainCheckout}
 	cmd := exec.Command(scriptPath, args...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
