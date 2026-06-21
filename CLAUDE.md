@@ -85,6 +85,16 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
   is opened. State progresses through `building` → `gated` → `publishing` →
   `done`.
 
+  The gate (`gate/run-gate.sh`) runs five stages: hygiene, build, lint, unit,
+  and e2e. The e2e stage is an **orchestrator** action (not part of the
+  sandboxed build-stage Claude invocation): it copies the built extension's
+  `dist/` into the running oCIS container (auto-discovered from `/web/apps/`),
+  restarts the container so oCIS picks up the new app, and runs the extension's
+  Playwright acceptance tests. It is skipped when no web-extensions checkout is
+  passed (the gate's optional 5th argument), and is serialized across
+  concurrently-built candidates via a lock so their Playwright sessions don't
+  collide on the shared admin user.
+
 ## What's next (in priority order)
 
 ### 1. Housekeeping (do this first)
@@ -142,7 +152,10 @@ allowlists by prompt:
   Bash(git status),Bash(git diff *)`
 
 No `git push`, no `gh`, no network tools — those are always orchestrator
-actions.
+actions. The same applies to the gate's e2e stage: Docker and Playwright
+execution are orchestrator actions in `gate/run-gate.sh`, never granted to the
+build-stage Claude invocation. Claude only writes the Playwright spec files; the
+gate runs them.
 
 **Issue comments:** `{{ISSUE_COMMENTS}}` is substituted into the planning,
 derive-stages, and build-stage prompts. It contains all Jira comments in

@@ -30,6 +30,7 @@ type GateStages struct {
 	Build   string `json:"build"`
 	Lint    string `json:"lint"`
 	Unit    string `json:"unit"`
+	E2E     string `json:"e2e"` // "ok" | "fail" | "skip"
 }
 
 // GateResult is the output of the validation gate.

@@ -31,8 +31,14 @@ before writing any code:
 4. **Stage review:** the developer reads and optionally edits `stages.md`,
    then runs `extctl approve-stages <id>` to start building
 5. **Staged build:** Claude implements each stage in sequence, running the
-   gate (hygiene, build, lint, unit checks) after every stage; failures
-   trigger one repair attempt per stage
+   gate (hygiene, build, lint, unit, and e2e checks) after every stage;
+   failures trigger one repair attempt per stage. The e2e stage runs the
+   extension's Playwright acceptance tests against a local oCIS started via
+   `docker compose up -d` in the web-extensions checkout — it copies the
+   built `dist/` into the running container, restarts it, and runs the tests.
+   If oCIS is not running, the e2e stage fails. The e2e stage is serialized
+   across concurrently-built candidates so their Playwright sessions don't
+   collide.
 6. **Publish:** pushes the branch and opens a GitHub PR once all stages pass
 
 If a stage fails after repair, the build is paused and a blocked state is
