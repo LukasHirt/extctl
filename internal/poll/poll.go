@@ -496,9 +496,6 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 		GateLint:     gateLint,
 		GateUnit:     gateUnit,
 		GateE2E:      gateE2E,
-		CostUSD:      bs.CostUSD,
-		Turns:        bs.Turns,
-		Attempts:     bs.Attempts,
 	})
 
 	logf("build: opening PR on %s…\n", opts.Config.TargetRepo.Remote)
@@ -519,8 +516,7 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 	_ = build.SaveState(runsDir, bs)
 
 	// Comment on the Jira issue with the PR link (no status transition — manager does that).
-	comment := fmt.Sprintf("PR opened: %s\n\nGate score: %.2f | Cost: $%.2f | Turns: %d | Attempts: %d",
-		pr.URL, gateScore, bs.CostUSD, bs.Turns, bs.Attempts)
+	comment := fmt.Sprintf("PR opened: %s\n\nGate score: %.2f", pr.URL, gateScore)
 	if addErr := jiraClient.AddComment(candidate.JiraKey, comment); addErr != nil {
 		logf("build: warning: could not comment on Jira issue: %v\n", addErr)
 	}
@@ -574,9 +570,6 @@ func publishBlocked(opts Options, date string, candidate state.Candidate, bs *bu
 		GateLint:     gateResult.Stages.Lint,
 		GateUnit:     gateResult.Stages.Unit,
 		GateE2E:      gateResult.Stages.E2E,
-		CostUSD:      bs.CostUSD,
-		Turns:        bs.Turns,
-		Attempts:     bs.Attempts,
 	})
 
 	pr, err := githubpkg.Create(githubpkg.PROptions{
