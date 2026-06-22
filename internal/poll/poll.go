@@ -457,6 +457,11 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 	bs.Phase = build.PhasePublishing
 	_ = build.SaveState(runsDir, bs)
 
+	logf("build: wiring into docker-compose, CI, and oCIS config…\n")
+	if err := build.WireExtension(worktreePath, candidate.ID); err != nil {
+		return fmt.Errorf("wire extension: %w", err)
+	}
+
 	logf("build: pushing branch %s…\n", bs.Branch)
 	if err := gitpkg.PushBranch(repoPath, bs.Branch); err != nil {
 		return fmt.Errorf("push branch: %w", err)
