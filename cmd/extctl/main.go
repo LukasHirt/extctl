@@ -626,6 +626,11 @@ var approveStagesCmd = &cobra.Command{
 		bs.Phase = build.PhasePublishing
 		_ = build.SaveState(cfg.RunsDir, bs)
 
+		fmt.Printf("[%s] wiring into docker-compose, CI, and oCIS config…\n", candidate.ID)
+		if err := build.WireExtension(worktreePath, candidate.ID); err != nil {
+			return fmt.Errorf("wire extension: %w", err)
+		}
+
 		fmt.Printf("[%s] pushing branch %s…\n", candidate.ID, bs.Branch)
 		if err := gitpkg.PushBranch(cfg.TargetRepo.Checkout, bs.Branch); err != nil {
 			return fmt.Errorf("push branch: %w", err)
