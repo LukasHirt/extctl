@@ -18,6 +18,9 @@ type Result struct {
 	TotalCostUSD float64 `json:"total_cost_usd"`
 	NumTurns     int     `json:"num_turns"`
 	IsError      bool    `json:"is_error"`
+	// FullText is all assistant text turns concatenated with the final result.
+	// Use this for parsing structured output that Claude may emit mid-conversation.
+	FullText string `json:"-"`
 }
 
 // RunOptions configures a headless claude -p invocation.
@@ -87,9 +90,10 @@ func Run(opts RunOptions) (*Result, error) {
 	}
 
 	var (
-		rawLines [][]byte
-		result   *Result
-		scanErr  error
+		rawLines      [][]byte
+		result        *Result
+		scanErr       error
+		assistantText strings.Builder
 	)
 
 	scanner := bufio.NewScanner(stdout)
@@ -107,6 +111,12 @@ func Run(opts RunOptions) (*Result, error) {
 		case "assistant":
 			if ev.Message != nil {
 				printMessage(ev.Message)
+				for _, block := range ev.Message.Content {
+					if block.Type == "text" && block.Text != "" {
+						assistantText.WriteString(block.Text)
+						assistantText.WriteString("\n")
+					}
+				}
 			}
 		case "result":
 			result = &Result{
@@ -153,6 +163,7 @@ func Run(opts RunOptions) (*Result, error) {
 	if result.IsError {
 		return nil, fmt.Errorf("claude reported an error: %s", truncate(result.Result, 500))
 	}
+	result.FullText = assistantText.String() + "\n" + result.Result
 	return result, nil
 }
 
@@ -163,6 +174,10 @@ func LoadResult(path string) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
+	var (
+		result        *Result
+		assistantText strings.Builder
+	)
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -172,18 +187,32 @@ func LoadResult(path string) (*Result, error) {
 		if err := json.Unmarshal([]byte(line), &ev); err != nil {
 			continue
 		}
-		if ev.Type == "result" {
-			return &Result{
+		switch ev.Type {
+		case "assistant":
+			if ev.Message != nil {
+				for _, block := range ev.Message.Content {
+					if block.Type == "text" && block.Text != "" {
+						assistantText.WriteString(block.Text)
+						assistantText.WriteString("\n")
+					}
+				}
+			}
+		case "result":
+			result = &Result{
 				Result:       ev.Result,
 				Subtype:      ev.Subtype,
 				SessionID:    ev.SessionID,
 				TotalCostUSD: ev.TotalCostUSD,
 				NumTurns:     ev.NumTurns,
 				IsError:      ev.IsError,
-			}, nil
+			}
 		}
 	}
-	return nil, fmt.Errorf("no result event found in %s", path)
+	if result == nil {
+		return nil, fmt.Errorf("no result event found in %s", path)
+	}
+	result.FullText = assistantText.String() + "\n" + result.Result
+	return result, nil
 }
 
 func printMessage(msg *streamMessage) {
