@@ -12,8 +12,12 @@ web extension ecosystem.
 Every workday extctl runs two phases:
 
 **Phase A — morning gen run**
-Generates 3 agentic extension specs via Claude Code, creates a Jira issue for
-each, and writes today's candidate slate to `runs/<date>/slate.json`.
+Generates 3 agentic extension specs via Claude Code, then presents each one for
+interactive review before any Jira issues are created. For each candidate you
+can approve it (push to Jira), discard it with a reason (persisted so it never
+reappears), or open the spec in a file for editing. Discarded candidates trigger
+automatic replacement generation. Only approved candidates become Jira issues.
+The final state (approved + discarded) is written to `runs/<date>/slate.json`.
 
 **Phase B — pick-driven staged build**
 Polls Jira for a candidate transitioned to `Doing` by the manager. On a pick it
@@ -76,13 +80,16 @@ export EXTCTL_JIRA_TOKEN="your-api-token"
 ### Phase A — spec generation
 
 ```bash
-# Generate today's 3 specs and create Jira issues
+# Generate today's specs — interactive review before Jira push
 extctl gen
+
+# Skip the review step and push all candidates to Jira directly (for automation)
+extctl gen --no-review
 
 # Preview the prompt and carryover context without calling Claude or Jira
 extctl gen --dry-run
 
-# Run Claude but skip Jira (useful for validating generation quality)
+# Run Claude but skip Jira and review (useful for validating generation quality)
 extctl gen --skip-jira
 
 # Show today's candidate slate

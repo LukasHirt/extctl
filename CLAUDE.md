@@ -59,12 +59,20 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
 
 - `extctl gen` — full Phase A: loads state, builds prompt with carryover +
   delivered dedup context, runs `claude -p` headless (Read/Grep/Glob only),
-  parses 3 `## CANDIDATE` blocks, creates Jira issues, writes
-  `runs/<date>/slate.json`.
+  parses 3 `## CANDIDATE` blocks, then enters an **interactive review loop**
+  before creating any Jira issues. For each candidate: `a` approve, `d` discard
+  with a reason, `e` edit the spec (written to `runs/<date>/review-<id>.md`),
+  `s` show full spec. Discarded candidates are persisted in the slate with
+  `status: rejected` and their reason (so they never reappear in the dedup
+  guard), and replacement candidates are generated automatically until all target
+  slots are filled. Only approved candidates become Jira issues. Writes
+  `runs/<date>/slate.json` with `review_done: true` on completion.
+- `extctl gen --no-review` — skips the interactive review and pushes all
+  generated candidates directly to Jira (use for scheduled/automated runs).
 - `extctl gen --dry-run` — shows carryovers, delivered IDs, and the full
   prompt without calling Claude or touching Jira.
 - `extctl gen --skip-jira` — runs Claude, prints parsed candidates, skips
-  Jira and slate write. Use this to validate generation quality.
+  Jira, review, and slate write. Use this to validate generation quality.
 - `extctl gen --model <model>` — override Claude model.
 - `extctl slate status` — shows latest slate.
 - `extctl slate carryovers [--format=dedup-hint]` — lists live carryovers.
@@ -111,20 +119,8 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
   ```
   `LoadAll()` or a separate `LoadDelivered()` function should read this file
   and merge its IDs into the dedup guard.
-- Add `StatusRejected` to the candidate status enum in `state.go` — distinct
-  from `StatusDeclined`. Declined = "not today, may reappear". Rejected =
-  "permanently invalid (e.g. already exists in oCIS natively), never
-  repropose". Wire `StatusRejected` into `DeliveredIDs()` so rejected
-  candidates appear in the dedup guard.
 
-### 2. `extctl gen --rerun-one`
-A flag to regenerate a single replacement candidate when one is rejected
-mid-day. Takes the rejected candidate ID, adds it to the dedup list with a
-reason, produces exactly 1 new spec. Currently done manually by re-running
-with `{{N}}=1` substitution in the shell; this should be a first-class
-command.
-
-### 3. Scheduling
+### 2. Scheduling
 - macOS: launchd plist, Mon–Fri 06:30 → `extctl gen`, business hours every
   10 min → `extctl poll`, login hook → `extctl reconcile`
 - Linux: systemd user timers (same schedule)
