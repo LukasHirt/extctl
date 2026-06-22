@@ -380,17 +380,28 @@ func reviewCandidates(candidates []claude.ParsedCandidate, runsDir, date string)
 	total := len(candidates)
 
 	for i, c := range candidates {
+		// Write spec to file immediately so the user can edit it before deciding.
+		specPath, err := writeEditableSpec(runsDir, date, c.ID, c.Raw)
+		if err != nil {
+			return nil, nil, fmt.Errorf("write spec for %s: %w", c.ID, err)
+		}
+
 		fmt.Printf("\n--- Candidate %d/%d ---\n", i+1, total)
 		printCandidateSummary(c)
+		fmt.Printf("Spec:   %s\n", specPath)
 
 	prompt:
 		for {
-			fmt.Print("\n[a]pprove  [d]iscard  [e]dit spec  [s]how full spec\n> ")
+			fmt.Print("\n[a]pprove  [d]iscard  [s]how full spec\n> ")
 			line, _ := reader.ReadString('\n')
 			choice := strings.TrimSpace(strings.ToLower(line))
 
 			switch choice {
 			case "a":
+				// Re-read spec file to pick up any edits made before approving.
+				if updated, err := os.ReadFile(specPath); err == nil {
+					c.Raw = string(updated)
+				}
 				approved = append(approved, c)
 				fmt.Printf("✓ Approved: %s\n", c.ID)
 				break prompt
@@ -402,22 +413,6 @@ func reviewCandidates(candidates []claude.ParsedCandidate, runsDir, date string)
 				rejected = append(rejected, rejectedSpec{Candidate: c, Reason: reason})
 				fmt.Printf("✗ Discarded: %s\n", c.ID)
 				break prompt
-
-			case "e":
-				path, err := writeEditableSpec(runsDir, date, c.ID, c.Raw)
-				if err != nil {
-					fmt.Printf("error writing spec: %v\n", err)
-					continue
-				}
-				fmt.Printf("Spec written to %s\nEdit it, then press Enter to continue...", path)
-				reader.ReadString('\n')
-				updated, err := os.ReadFile(path)
-				if err != nil {
-					fmt.Printf("error reading updated spec: %v\n", err)
-					continue
-				}
-				c.Raw = string(updated)
-				fmt.Println("Spec updated — press [a] to approve or [d] to discard.")
 
 			case "s":
 				fmt.Println()

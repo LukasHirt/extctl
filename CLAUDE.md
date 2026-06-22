@@ -60,9 +60,10 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
 - `extctl gen` — full Phase A: loads state, builds prompt with carryover +
   delivered dedup context, runs `claude -p` headless (Read/Grep/Glob only),
   parses 3 `## CANDIDATE` blocks, then enters an **interactive review loop**
-  before creating any Jira issues. For each candidate: `a` approve, `d` discard
-  with a reason, `e` edit the spec (written to `runs/<date>/review-<id>.md`),
-  `s` show full spec. Discarded candidates are persisted in the slate with
+  before creating any Jira issues. Each candidate's spec is immediately written
+  to `runs/<date>/review-<id>.md` — edit it in any editor before deciding.
+  Options: `a` approve (re-reads the file to pick up edits), `d` discard with a
+  reason, `s` show full spec. Discarded candidates are persisted in the slate with
   `status: rejected` and their reason (so they never reappear in the dedup
   guard), and replacement candidates are generated automatically until all target
   slots are filled. Only approved candidates become Jira issues. Writes
