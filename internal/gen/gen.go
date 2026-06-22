@@ -417,7 +417,7 @@ func reviewCandidates(candidates []claude.ParsedCandidate, runsDir, date string)
 					continue
 				}
 				c.Raw = string(updated)
-				fmt.Println("Spec updated.")
+				fmt.Println("Spec updated — press [a] to approve or [d] to discard.")
 
 			case "s":
 				fmt.Println()
