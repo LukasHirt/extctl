@@ -190,7 +190,7 @@ func Run(opts Options) (*Result, error) {
 	}
 
 	// 5. Parse candidates.
-	candidates, err := claude.ParseCandidates(result.Result)
+	candidates, err := claude.ParseCandidates(result.FullText)
 	if err != nil {
 		return nil, fmt.Errorf("parse candidates: %w\nresult saved to: %s", err, outputFile)
 	}
@@ -449,7 +449,7 @@ func generateReplacements(opts Options, count int, deliveredIDs map[string]bool,
 	}
 	fmt.Printf("Claude finished: %d turns, $%.4f\n", result.NumTurns, result.TotalCostUSD)
 
-	candidates, err := claude.ParseCandidates(result.Result)
+	candidates, err := claude.ParseCandidates(result.FullText)
 	if err != nil {
 		return nil, fmt.Errorf("parse replacement candidates: %w", err)
 	}
