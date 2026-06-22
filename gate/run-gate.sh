@@ -99,6 +99,23 @@ if [ -n "$HARDCODED" ]; then
   write_json false; exit 1
 fi
 
+# No LLM apiKey in extension source. The LLM credential is a server-side proxy concern;
+# an apiKey field in extension config or a fetch call means credentials are leaking to the browser.
+APIKEY=$(grep -rn "apiKey\|api_key\|LLM_API_KEY" "$EXT_DIR/src/" 2>/dev/null || true)
+if [ -n "$APIKEY" ]; then
+  stage_fail hygiene "LLM apiKey found in src/ — the LLM credential belongs in ai-llm-proxy env vars, not in the extension: $APIKEY"
+  write_json false; exit 1
+fi
+
+# No manual Authorization header construction in extension source.
+# useLLM attaches the oCIS token internally after enforcing same-origin; duplicating this
+# in extension code bypasses that guard and risks forwarding the token cross-origin.
+AUTH_MANUAL=$(grep -rn "Authorization.*Bearer\|Bearer.*\${" "$EXT_DIR/src/" 2>/dev/null || true)
+if [ -n "$AUTH_MANUAL" ]; then
+  stage_fail hygiene "manual Authorization/Bearer header construction found in src/ — use useLLM composable instead: $AUTH_MANUAL"
+  write_json false; exit 1
+fi
+
 # acceptance.spec.ts must have >= SPEC_BULLET_COUNT expect() calls.
 # Prefer tests/e2e/acceptance.spec.ts (scaffold default), fall back to root.
 ACCEPTANCE="$EXT_DIR/tests/e2e/acceptance.spec.ts"

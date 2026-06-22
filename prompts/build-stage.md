@@ -54,10 +54,24 @@ what is described for stage {{STAGE_NUM}}.
   HTML elements or custom CSS where an ODS component exists.
 - For all LLM calls, use the `useLLM` composable. Find it at
   `src/composables/useLLM.ts` in this repository — read it before writing any
-  LLM-related code to understand the API.
+  LLM-related code to understand the API. The composable enforces same-origin
+  and attaches the oCIS token internally; you do not need to handle auth.
 - All new files must live inside `packages/web-app-{{EXT_ID}}/`.
 - Do NOT touch any files outside `packages/web-app-{{EXT_ID}}/`.
 - Do NOT push to remote. Do NOT open pull requests.
+
+## Security rules
+
+- **Never put an `apiKey` in `LLMConfig` or any LLM-related config.** The LLM
+  API key lives server-side in the `ai-llm-proxy` environment; the browser
+  never sees it. An `apiKey` field in extension config is always wrong.
+- **Never construct an `Authorization` header manually** for LLM requests. The
+  `useLLM` composable reads `useAuthStore().accessToken` and attaches it for
+  you, but only after verifying the endpoint is same-origin. Duplicating this
+  logic in extension code bypasses the guard.
+- **Never send the oCIS access token to a cross-origin endpoint.** The proxy
+  validates the token on the same server; forwarding it to an external URL
+  (even one from admin config) leaks user credentials to a third party.
 
 ## Acceptance test rules
 
