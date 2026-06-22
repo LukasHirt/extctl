@@ -667,9 +667,6 @@ var approveStagesCmd = &cobra.Command{
 			GateLint:     gateLint,
 			GateUnit:     gateUnit,
 			GateE2E:      gateE2E,
-			CostUSD:      bs.CostUSD,
-			Turns:        bs.Turns,
-			Attempts:     bs.Attempts,
 		})
 
 		fmt.Printf("[%s] opening PR on %s…\n", candidate.ID, cfg.TargetRepo.Remote)
@@ -694,8 +691,7 @@ var approveStagesCmd = &cobra.Command{
 		jiraEmail, jiraEmailErr := config.JiraEmail()
 		if jiraErr == nil && jiraEmailErr == nil && candidate.JiraKey != "" {
 			jiraClient := jira.NewClient(cfg.Jira.BaseURL, jiraEmail, jiraToken)
-			comment := fmt.Sprintf("PR opened: %s\n\nGate score: %.2f | Cost: $%.2f | Turns: %d | Attempts: %d",
-				pr.URL, gateScore, bs.CostUSD, bs.Turns, bs.Attempts)
+			comment := fmt.Sprintf("PR opened: %s\n\nGate score: %.2f", pr.URL, gateScore)
 			if addErr := jiraClient.AddComment(candidate.JiraKey, comment); addErr != nil {
 				fmt.Printf("[%s] warning: could not comment on Jira issue: %v\n", candidate.ID, addErr)
 			}

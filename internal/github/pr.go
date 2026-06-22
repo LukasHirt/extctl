@@ -133,9 +133,6 @@ type BodyOptions struct {
 	GateLint     string
 	GateUnit     string
 	GateE2E      string // "ok" | "fail" | "skip" | ""
-	CostUSD      float64
-	Turns        int
-	Attempts     int
 }
 
 // FormatBody renders the PR body for an AI-generated extension.
@@ -159,8 +156,8 @@ func FormatBody(opts BodyOptions) string {
 	if opts.GateScore < 1.0 {
 		gateIndicator = "⚠️"
 	}
-	fmt.Fprintf(&b, "> **AI-generated** · %s · Gate: %s %.2f · Cost: $%.2f · Turns: %d · Attempts: %d\n\n",
-		jiraRef, gateIndicator, opts.GateScore, opts.CostUSD, opts.Turns, opts.Attempts)
+	fmt.Fprintf(&b, "> **AI-generated** · %s · Gate: %s %.2f\n\n",
+		jiraRef, gateIndicator, opts.GateScore)
 
 	if spec != nil {
 		writeSection(&b, "Problem", spec.Problem)
