@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ type Options struct {
 	Config   *config.Config
 	DryRun   bool   // if true, print what would happen but don't call claude or create issues
 	SkipJira bool   // if true, run claude and parse candidates but don't create Jira issues
+	NoReview bool   // if true, skip interactive review and push all candidates to Jira directly
 	FromFile string // if set, skip claude and read candidates from this specgen.json path
 	Date     string // YYYY-MM-DD; defaults to today in the configured timezone
 	Model    string // optional claude model override
@@ -31,13 +33,20 @@ type Result struct {
 	DryRun     bool
 }
 
+// rejectedSpec holds a candidate that was discarded during interactive review.
+type rejectedSpec struct {
+	Candidate claude.ParsedCandidate
+	Reason    string
+}
+
 // Run executes the morning gen flow:
 //  1. Load existing slates to derive carryovers + delivered IDs.
 //  2. Build the claude prompt with the dedup context.
 //  3. Run claude -p (unless dry run).
 //  4. Parse the 3 candidate blocks.
-//  5. Create Jira issues for the 3 fresh candidates.
-//  6. Write/update today's slate.json.
+//  5. Interactive review (unless --no-review or --skip-jira).
+//  6. Create Jira issues for approved candidates.
+//  7. Write/update today's slate.json.
 func Run(opts Options) (*Result, error) {
 	date := opts.Date
 	if date == "" {
@@ -54,23 +63,34 @@ func Run(opts Options) (*Result, error) {
 		return nil, fmt.Errorf("load slates: %w", err)
 	}
 
-	// Check idempotency: if today's slate already has 3 fresh candidates, skip.
+	// Check idempotency: skip if today's review is already done, or if we already
+	// have enough non-rejected fresh candidates.
 	todaySlate, err := state.Load(opts.Config.RunsDir, date)
 	if err != nil {
 		return nil, fmt.Errorf("load today's slate: %w", err)
 	}
-	freshToday := 0
 	if todaySlate != nil {
+		if todaySlate.ReviewDone {
+			fmt.Printf("Today's slate review is already complete — nothing to generate.\n")
+			res := &Result{Date: date, DryRun: opts.DryRun}
+			for _, c := range todaySlate.Candidates {
+				if c.Origin == "carryover" {
+					res.Carryovers = append(res.Carryovers, c)
+				} else if c.Status != state.StatusRejected {
+					res.Fresh = append(res.Fresh, c)
+				}
+			}
+			return res, nil
+		}
+		freshToday := 0
 		for _, c := range todaySlate.Candidates {
-			if c.Origin == "generated" || c.Origin == "manual" {
+			if (c.Origin == "generated" || c.Origin == "manual") && c.Status != state.StatusRejected {
 				freshToday++
 			}
 		}
-	}
-	if freshToday >= opts.Config.FreshCandidatesPerDay {
-		fmt.Printf("Today's slate already has %d fresh candidates — nothing to generate.\n", freshToday)
-		res := &Result{Date: date, DryRun: opts.DryRun}
-		if todaySlate != nil {
+		if freshToday >= opts.Config.FreshCandidatesPerDay {
+			fmt.Printf("Today's slate already has %d fresh candidates — nothing to generate.\n", freshToday)
+			res := &Result{Date: date, DryRun: opts.DryRun}
 			for _, c := range todaySlate.Candidates {
 				if c.Origin == "carryover" {
 					res.Carryovers = append(res.Carryovers, c)
@@ -78,8 +98,8 @@ func Run(opts Options) (*Result, error) {
 					res.Fresh = append(res.Fresh, c)
 				}
 			}
+			return res, nil
 		}
-		return res, nil
 	}
 
 	// 2. Derive carryovers and delivered IDs.
@@ -132,14 +152,12 @@ func Run(opts Options) (*Result, error) {
 
 	var result *claude.Result
 	if opts.FromFile != "" {
-		// Load candidates from an existing specgen.json instead of calling Claude.
 		fmt.Printf("Loading candidates from %s…\n", opts.FromFile)
 		r, err := claude.LoadResult(opts.FromFile)
 		if err != nil {
 			return nil, fmt.Errorf("--from-file: %w", err)
 		}
 		result = r
-		// Copy to the canonical output location if it's a different file.
 		if abs, _ := filepath.Abs(opts.FromFile); abs != outputFile {
 			data, err := os.ReadFile(opts.FromFile)
 			if err != nil {
@@ -184,7 +202,6 @@ func Run(opts Options) (*Result, error) {
 			opts.Config.FreshCandidatesPerDay, len(candidates))
 	}
 
-	// Print parsed candidates regardless of --skip-jira.
 	fmt.Println()
 	for i, c := range candidates {
 		fmt.Printf("Candidate %d: %s — %s (effort: %s)\n", i+1, c.ID, c.Title, c.Effort)
@@ -205,7 +222,58 @@ func Run(opts Options) (*Result, error) {
 		return &Result{Date: date, Carryovers: carryovers, Fresh: fresh}, nil
 	}
 
-	// 6. Create Jira issues.
+	// 6. Interactive review loop (unless --no-review).
+	var allRejected []rejectedSpec
+	if !opts.NoReview {
+		extraDelivered := map[string]bool{}
+		pendingForReview := candidates
+		var allApproved []claude.ParsedCandidate
+		replacementRound := 0
+
+		for {
+			approved, rejected, err := reviewCandidates(pendingForReview, opts.Config.RunsDir, date)
+			if err != nil {
+				return nil, fmt.Errorf("review candidates: %w", err)
+			}
+			allApproved = append(allApproved, approved...)
+			allRejected = append(allRejected, rejected...)
+			for _, r := range rejected {
+				extraDelivered[r.Candidate.ID] = true
+			}
+
+			needed := opts.Config.FreshCandidatesPerDay - len(allApproved)
+			if len(rejected) == 0 || needed <= 0 {
+				break
+			}
+
+			expandedDelivered := make(map[string]bool, len(deliveredIDs)+len(extraDelivered))
+			for id := range deliveredIDs {
+				expandedDelivered[id] = true
+			}
+			for id := range extraDelivered {
+				expandedDelivered[id] = true
+			}
+
+			replacementRound++
+			fmt.Printf("\n%d candidate(s) discarded — generating %d replacement(s)…\n", len(rejected), needed)
+			pendingForReview, err = generateReplacements(opts, needed, expandedDelivered, carryovers, date, replacementRound)
+			if err != nil {
+				return nil, fmt.Errorf("generate replacements (round %d): %w", replacementRound, err)
+			}
+			if len(pendingForReview) == 0 {
+				fmt.Println("No replacement candidates returned — proceeding with what was approved.")
+				break
+			}
+		}
+		candidates = allApproved
+	}
+
+	if len(candidates) == 0 {
+		fmt.Println("No candidates approved — slate not written.")
+		return &Result{Date: date, Carryovers: carryovers}, nil
+	}
+
+	// 7. Create Jira issues for approved candidates.
 	jiraToken, err := config.JiraToken()
 	if err != nil {
 		return nil, err
@@ -232,9 +300,7 @@ func Run(opts Options) (*Result, error) {
 			return nil, fmt.Errorf("create issue for %s: %w", pc.ID, err)
 		}
 
-		// Transition to the candidate status (e.g. "Needs Approval").
 		if err := jiraClient.Transition(issue.Key, opts.Config.Jira.CandidateStatus); err != nil {
-			// Non-fatal: the issue exists, the transition just failed.
 			fmt.Printf("warning: could not transition %s to %q: %v\n",
 				issue.Key, opts.Config.Jira.CandidateStatus, err)
 		}
@@ -255,7 +321,22 @@ func Run(opts Options) (*Result, error) {
 		})
 	}
 
-	// 7. Update carryover appearances and write today's slate.
+	// Append rejected candidates so they appear in the dedup guard on future runs.
+	for _, r := range allRejected {
+		freshCandidates = append(freshCandidates, state.Candidate{
+			ID:             r.Candidate.ID,
+			Title:          r.Candidate.Title,
+			Effort:         r.Candidate.Effort,
+			Status:         state.StatusRejected,
+			RejectedReason: r.Reason,
+			Origin:         "generated",
+			FirstDate:      date,
+			SpecMD:         r.Candidate.Raw,
+			Appearances:    1,
+		})
+	}
+
+	// 8. Update carryover appearances and write today's slate.
 	var updatedCarryovers []state.Candidate
 	for _, c := range carryovers {
 		c.Appearances++
@@ -268,27 +349,149 @@ func Run(opts Options) (*Result, error) {
 		Date:       date,
 		Candidates: allCandidates,
 		CreatedAt:  time.Now(),
+		ReviewDone: !opts.NoReview,
 	}
 	if err := state.Save(opts.Config.RunsDir, slate); err != nil {
 		return nil, fmt.Errorf("save slate: %w", err)
 	}
 
+	// Split fresh into approved vs rejected for the result summary.
+	var approvedFresh []state.Candidate
+	for _, c := range freshCandidates {
+		if c.Status != state.StatusRejected {
+			approvedFresh = append(approvedFresh, c)
+		}
+	}
+
 	return &Result{
 		Date:       date,
 		Carryovers: updatedCarryovers,
-		Fresh:      freshCandidates,
+		Fresh:      approvedFresh,
 	}, nil
 }
 
+// reviewCandidates presents each candidate interactively and returns approved
+// and rejected lists. The user can approve (a), discard with a reason (d),
+// edit the spec file (e), or show the full spec (s).
+func reviewCandidates(candidates []claude.ParsedCandidate, runsDir, date string) ([]claude.ParsedCandidate, []rejectedSpec, error) {
+	reader := bufio.NewReader(os.Stdin)
+	var approved []claude.ParsedCandidate
+	var rejected []rejectedSpec
+	total := len(candidates)
+
+	for i, c := range candidates {
+		// Write spec to file immediately so the user can edit it before deciding.
+		specPath, err := writeEditableSpec(runsDir, date, c.ID, c.Raw)
+		if err != nil {
+			return nil, nil, fmt.Errorf("write spec for %s: %w", c.ID, err)
+		}
+
+		fmt.Printf("\n--- Candidate %d/%d ---\n", i+1, total)
+		printCandidateSummary(c)
+		fmt.Printf("Spec:   %s\n", specPath)
+
+	prompt:
+		for {
+			fmt.Print("\n[a]pprove  [d]iscard  [s]how full spec\n> ")
+			line, _ := reader.ReadString('\n')
+			choice := strings.TrimSpace(strings.ToLower(line))
+
+			switch choice {
+			case "a":
+				// Re-read spec file to pick up any edits made before approving.
+				if updated, err := os.ReadFile(specPath); err == nil {
+					c.Raw = string(updated)
+				}
+				approved = append(approved, c)
+				fmt.Printf("✓ Approved: %s\n", c.ID)
+				break prompt
+
+			case "d":
+				fmt.Print("Reason for discarding: ")
+				reason, _ := reader.ReadString('\n')
+				reason = strings.TrimSpace(reason)
+				rejected = append(rejected, rejectedSpec{Candidate: c, Reason: reason})
+				fmt.Printf("✗ Discarded: %s\n", c.ID)
+				break prompt
+
+			case "s":
+				fmt.Println()
+				fmt.Println(c.Raw)
+			}
+		}
+	}
+	return approved, rejected, nil
+}
+
+// generateReplacements runs Claude to produce count replacement candidates,
+// using an expanded deliveredIDs map that includes the just-rejected IDs.
+// Output is written to runs/<date>/specgen-r<round>.jsonl so the original is preserved.
+func generateReplacements(opts Options, count int, deliveredIDs map[string]bool, carryovers []state.Candidate, date string, round int) ([]claude.ParsedCandidate, error) {
+	cfgCopy := *opts.Config
+	cfgCopy.FreshCandidatesPerDay = count
+	prompt, err := buildPrompt(&cfgCopy, carryovers, deliveredIDs)
+	if err != nil {
+		return nil, fmt.Errorf("build replacement prompt: %w", err)
+	}
+
+	outputFile := filepath.Join(opts.Config.RunsDir, date, fmt.Sprintf("specgen-r%d.jsonl", round))
+	claudeOpts := claude.RunOptions{
+		Prompt:       prompt,
+		AllowedTools: []string{"Read", "Grep", "Glob"},
+		WorkDir:      opts.Config.TargetRepo.Checkout,
+		OutputFile:   outputFile,
+		Model:        opts.Model,
+	}
+	fmt.Printf("Running claude for %d replacement(s) (round %d)…\n", count, round)
+	result, err := claude.Run(claudeOpts)
+	if err != nil {
+		return nil, fmt.Errorf("claude replacement run: %w", err)
+	}
+	fmt.Printf("Claude finished: %d turns, $%.4f\n", result.NumTurns, result.TotalCostUSD)
+
+	candidates, err := claude.ParseCandidates(result.Result)
+	if err != nil {
+		return nil, fmt.Errorf("parse replacement candidates: %w", err)
+	}
+	return candidates, nil
+}
+
+// writeEditableSpec writes the raw spec markdown to runs/<date>/review-<id>.md
+// so the user can edit it in their preferred editor.
+func writeEditableSpec(runsDir, date, id, raw string) (string, error) {
+	dir := filepath.Join(runsDir, date)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir: %w", err)
+	}
+	path := filepath.Join(dir, "review-"+id+".md")
+	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+		return "", fmt.Errorf("write review file: %w", err)
+	}
+	return path, nil
+}
+
+// printCandidateSummary prints a short preview of a candidate.
+func printCandidateSummary(c claude.ParsedCandidate) {
+	fmt.Printf("ID:     %s\n", c.ID)
+	fmt.Printf("Title:  %s\n", c.Title)
+	fmt.Printf("Effort: %s\n", c.Effort)
+	if c.Sketch != "" {
+		lines := strings.SplitN(c.Sketch, "\n", 4)
+		n := len(lines)
+		if n > 3 {
+			n = 3
+		}
+		fmt.Printf("Sketch: %s\n", strings.Join(lines[:n], " "))
+	}
+}
+
 func buildPrompt(cfg *config.Config, carryovers []state.Candidate, deliveredIDs map[string]bool) (string, error) {
-	// Load gen-specs.md and replace {{N}}.
 	promptBytes, err := os.ReadFile(cfg.Prompts.GenSpecs)
 	if err != nil {
 		return "", fmt.Errorf("read gen-specs prompt %s: %w", cfg.Prompts.GenSpecs, err)
 	}
 	prompt := strings.ReplaceAll(string(promptBytes), "{{N}}", fmt.Sprintf("%d", cfg.FreshCandidatesPerDay))
 
-	// Load idea pool.
 	poolBytes, err := os.ReadFile(cfg.IdeaPool)
 	if err != nil && !os.IsNotExist(err) {
 		return "", fmt.Errorf("read idea pool %s: %w", cfg.IdeaPool, err)
@@ -299,7 +502,6 @@ func buildPrompt(cfg *config.Config, carryovers []state.Candidate, deliveredIDs 
 	}
 	prompt += "\n\n" + poolSection
 
-	// Carryover dedup section.
 	if len(carryovers) > 0 {
 		var lines []string
 		for _, c := range carryovers {
@@ -311,7 +513,6 @@ func buildPrompt(cfg *config.Config, carryovers []state.Candidate, deliveredIDs 
 			strings.Join(lines, "\n")
 	}
 
-	// Delivered IDs dedup section.
 	if len(deliveredIDs) > 0 {
 		var lines []string
 		for id := range deliveredIDs {

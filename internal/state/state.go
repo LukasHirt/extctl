@@ -34,7 +34,8 @@ type Candidate struct {
 	FirstDate   string          `json:"first_date"`        // YYYY-MM-DD, day first offered
 	Effort        string          `json:"effort"`            // S | M | L
 	SpecMD        string          `json:"spec_md"`           // full ## CANDIDATE block
-	IssueComments string          `json:"issue_comments,omitempty"` // formatted Jira comments fetched at pick time
+	IssueComments  string          `json:"issue_comments,omitempty"`  // formatted Jira comments fetched at pick time
+	RejectedReason string          `json:"rejected_reason,omitempty"` // reason provided when discarding during spec review
 }
 
 // Slate is the state file for one workday: runs/<date>/slate.json
@@ -43,6 +44,7 @@ type Slate struct {
 	Candidates []Candidate `json:"candidates"`
 	CreatedAt  time.Time   `json:"created_at"`
 	UpdatedAt  time.Time   `json:"updated_at"`
+	ReviewDone bool        `json:"review_done,omitempty"` // true once the interactive spec review has completed
 }
 
 func slateDir(runsDir, date string) string {

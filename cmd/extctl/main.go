@@ -53,6 +53,7 @@ var rootCmd = &cobra.Command{
 var (
 	genDryRun   bool
 	genSkipJira bool
+	genNoReview bool
 	genFromFile string
 	genModel    string
 	genDate     string
@@ -66,6 +67,7 @@ var genCmd = &cobra.Command{
 			Config:   cfg,
 			DryRun:   genDryRun,
 			SkipJira: genSkipJira,
+			NoReview: genNoReview,
 			FromFile: genFromFile,
 			Date:     genDate,
 			Model:    genModel,
@@ -744,6 +746,8 @@ func init() {
 		"print the prompt that would be sent without calling claude or creating issues")
 	genCmd.Flags().BoolVar(&genSkipJira, "skip-jira", false,
 		"run claude and show parsed candidates but do not create Jira issues or write slate")
+	genCmd.Flags().BoolVar(&genNoReview, "no-review", false,
+		"skip interactive review and push all generated candidates directly to Jira (use for automation)")
 	genCmd.Flags().StringVar(&genFromFile, "from-file", "",
 		"skip claude and read candidates from an existing specgen.json (e.g. runs/2026-06-18/specgen.json)")
 	genCmd.Flags().StringVar(&genModel, "model", "",
