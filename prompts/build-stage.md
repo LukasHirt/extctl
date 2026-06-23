@@ -57,8 +57,43 @@ what is described for stage {{STAGE_NUM}}.
   LLM-related code to understand the API. The composable enforces same-origin
   and attaches the oCIS token internally; you do not need to handle auth.
 - All new files must live inside `packages/web-app-{{EXT_ID}}/`.
-- Do NOT touch any files outside `packages/web-app-{{EXT_ID}}/`.
+- Do NOT touch any files outside `packages/web-app-{{EXT_ID}}/`, **with the sole exception of
+  the three registration files** described in the section below.
 - Do NOT push to remote. Do NOT open pull requests.
+
+## Registration files
+
+Every extension must be registered in three files so that oCIS, local dev, and GHA can discover
+it. **Add these entries exactly once — on the scaffold stage.** If the entries are already
+present (e.g. you are building a later stage), skip this step entirely.
+
+1. **`docker-compose.yml`** — add a volume mount under the `ocis` service `volumes:` list,
+   following the pattern of the existing extension mounts:
+   ```yaml
+   - ./packages/web-app-{{EXT_ID}}/dist:/web/apps/{{EXT_ID}}
+   ```
+
+2. **`dev/docker/ocis.apps.yaml`** — add an entry keyed by `{{EXT_ID}}` (no `web-app-` prefix),
+   following the pattern of the existing entries:
+   ```yaml
+   {{EXT_ID}}:
+     config:
+       llm:
+         endpoint: 'https://host.docker.internal:9200/ai-llm-proxy/v1'
+         model: 'llama3.2'
+   ```
+
+3. **`support/actions/ocis.apps.yaml`** — add an entry keyed by `web-app-{{EXT_ID}}`,
+   following the pattern of the existing entries:
+   ```yaml
+   web-app-{{EXT_ID}}:
+     config:
+       llm:
+         endpoint: 'https://localhost:9200/ai-llm-proxy/v1'
+         model: 'llama3.2'
+   ```
+
+Read each file before editing to understand the exact indentation and ordering used.
 
 ## Security rules
 
@@ -97,7 +132,8 @@ instance. Write real tests that log in, navigate, and assert visible state.
 - `expect(page).toBeDefined()` or any `expect(<variable>).toBeDefined()` — always true.
 - `expect(true).toBe(true)` or other tautologies.
 - `.only()` / `.skip()` modifiers.
-- Writing files anywhere outside `packages/web-app-{{EXT_ID}}/`.
+- Writing test/source files anywhere outside `packages/web-app-{{EXT_ID}}/` (the registration
+  files above are the only permitted exception).
 
 See `packages/web-app-unzip/tests/e2e/` and `packages/web-app-file-comments/tests/e2e/`
 for real examples.
@@ -115,6 +151,8 @@ Once all checks pass, commit your work using a conventional commit message:
 
 ```
 git add packages/web-app-{{EXT_ID}}/
+# On the scaffold stage only, also stage the three registration files if you edited them:
+# git add docker-compose.yml dev/docker/ocis.apps.yaml support/actions/ocis.apps.yaml
 git commit -s -m "<type>(web-app-{{EXT_ID}}): {{STAGE_DESC}}"
 ```
 
