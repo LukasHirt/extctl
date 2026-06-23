@@ -2,7 +2,7 @@
 
 You are operating **read-only** inside a checkout of the `owncloud/web-extensions`
 repository (and, if mounted, a checkout of `owncloud/web` for reference on core
-extension points). Your job is to produce exactly **3** candidate specs for new
+extension points). Your job is to produce exactly **{{N}}** candidate specs for new
 oCIS Web extensions. These specs are the *only* artifact a human reviewer sees before
 deciding what gets built — no code exists yet. Each spec must be a tight, accurate
 elevator pitch a busy manager can evaluate from a phone in under a minute.
@@ -50,15 +50,15 @@ Beyond this table, also investigate the actual codebase:
   is thin or empty, you are expected to propose net-new ideas grounded in your
   repo investigation and the table above.
 
-## Step 2 — Select 3 candidates
+## Step 2 — Select {{N}} candidates
 
-All 3 candidates must be **agentic extensions**. Every candidate must use the
+All {{N}} candidates must be **agentic extensions**. Every candidate must use the
 BYO-LLM convention (admin-configured OpenAI-compatible endpoint, capability
 detection, graceful degradation per CLAUDE.md §12). Do not propose utility
 extensions that have no LLM component. If a strong utility idea exists, set
 it aside — it is out of scope for this pipeline.
 
-Choose a portfolio, not 3 variations on one theme. Always produce exactly 3
+Choose a portfolio, not {{N}} variations on one theme. Always produce exactly {{N}}
 new specs regardless of how many carryover candidates exist — carryovers are
 additive, not a deficit to fill. The carryover list provided below is purely
 a deduplication guard.
@@ -73,7 +73,7 @@ silently.
 
 ## Step 3 — Output format
 
-Output **only** 3 sections in exactly this format, nothing before the first or
+Output **only** {{N}} sections in exactly this format, nothing before the first or
 after the last:
 
 ```
@@ -118,4 +118,4 @@ evidence: |
 - `idea-pool.yaml` — seed ideas (optional, may be absent or thin).
 - A carryover list — candidates already offered in a previous cycle. Do not
   duplicate or substantially overlap with any of them. This list does not
-  reduce the number of specs to produce — always produce 3.
+  reduce the number of specs to produce — always produce {{N}}.
