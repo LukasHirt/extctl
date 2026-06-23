@@ -1,11 +1,16 @@
 package gate
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 // Stages holds per-stage verdicts from run-gate.sh.
@@ -63,6 +68,48 @@ func Run(scriptPath, worktreePath, extID, outputDir string, specBulletCount int,
 		return nil, fmt.Errorf("parse gate.json: %w", err)
 	}
 	return &result, nil
+}
+
+// EnsureOCIS checks that the oCIS container is running in mainCheckout.
+// If it is not running, it starts it via docker compose up -d ocis and
+// waits up to 60 s for the health endpoint to become ready.
+func EnsureOCIS(mainCheckout string) error {
+	checkCmd := exec.Command("docker", "compose", "ps", "-q", "ocis")
+	checkCmd.Dir = mainCheckout
+	out, _ := checkCmd.Output()
+	if strings.TrimSpace(string(out)) != "" {
+		return nil // already running
+	}
+
+	fmt.Println("gate: oCIS not running — starting via docker compose up -d ocis…")
+	upCmd := exec.Command("docker", "compose", "up", "-d", "ocis")
+	upCmd.Dir = mainCheckout
+	upCmd.Stdout = os.Stdout
+	upCmd.Stderr = os.Stderr
+	if err := upCmd.Run(); err != nil {
+		return fmt.Errorf("docker compose up -d ocis: %w", err)
+	}
+
+	const ocisURL = "https://host.docker.internal:9200/health/live"
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // self-signed dev cert
+		},
+	}
+	for i := 0; i < 30; i++ {
+		resp, err := client.Get(ocisURL)
+		if err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if strings.Contains(string(body), "alive") {
+				fmt.Println("gate: oCIS is healthy")
+				return nil
+			}
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return fmt.Errorf("oCIS did not become healthy within 60s at %s", ocisURL)
 }
 
 // ReadLog returns the contents of gate.log from the output directory.
