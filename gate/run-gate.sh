@@ -93,8 +93,11 @@ if [ -n "$OUTSIDE" ]; then
   write_json false; exit 1
 fi
 
-# No files larger than 1 MB.
-LARGE=$(find "$EXT_DIR" -type f -size +1M 2>/dev/null || true)
+# No committed files larger than 1 MB (gitignored artifacts are excluded).
+LARGE=$(cd "$WORKTREE" && git ls-files "packages/web-app-$EXT_ID" \
+  | while IFS= read -r f; do
+      find "$WORKTREE/$f" -maxdepth 0 -size +1M 2>/dev/null
+    done || true)
 if [ -n "$LARGE" ]; then
   stage_fail hygiene "files larger than 1 MB found: $LARGE"
   write_json false; exit 1
