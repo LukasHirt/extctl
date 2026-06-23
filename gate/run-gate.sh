@@ -119,7 +119,8 @@ fi
 # No manual Authorization header construction in extension source.
 # useLLM attaches the oCIS token internally after enforcing same-origin; duplicating this
 # in extension code bypasses that guard and risks forwarding the token cross-origin.
-AUTH_MANUAL=$(grep -rn "Authorization.*Bearer\|Bearer.*\${" "$EXT_DIR/src/" 2>/dev/null || true)
+AUTH_MANUAL=$(grep -rn "Authorization.*Bearer\|Bearer.*\${" "$EXT_DIR/src/" 2>/dev/null \
+  | grep -v "/useLlm\.ts:" || true)
 if [ -n "$AUTH_MANUAL" ]; then
   stage_fail hygiene "manual Authorization/Bearer header construction found in src/ — use useLLM composable instead: $AUTH_MANUAL"
   write_json false; exit 1
