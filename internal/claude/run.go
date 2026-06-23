@@ -163,7 +163,11 @@ func Run(opts RunOptions) (*Result, error) {
 	if result.IsError {
 		return nil, fmt.Errorf("claude reported an error: %s", truncate(result.Result, 500))
 	}
-	result.FullText = assistantText.String() + "\n" + result.Result
+	if assistantText.Len() > 0 {
+		result.FullText = assistantText.String()
+	} else {
+		result.FullText = result.Result
+	}
 	return result, nil
 }
 
@@ -211,7 +215,11 @@ func LoadResult(path string) (*Result, error) {
 	if result == nil {
 		return nil, fmt.Errorf("no result event found in %s", path)
 	}
-	result.FullText = assistantText.String() + "\n" + result.Result
+	if assistantText.Len() > 0 {
+		result.FullText = assistantText.String()
+	} else {
+		result.FullText = result.Result
+	}
 	return result, nil
 }
 
