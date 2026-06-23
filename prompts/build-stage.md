@@ -128,6 +128,8 @@ instance. Write real tests that log in, navigate, and assert visible state.
   )
   ```
 
+- When a click is blocked by a modal, overlay, or backdrop: read the component's source file first to identify the actual dismissal mechanism (close button selector, emitted event, keyboard binding, etc.), then add a step that uses that specific mechanism before the click. Do NOT guess with generic shortcuts like `Escape` without confirming the component handles them. Do NOT set `pointer-events: none`, `display: none`, or any equivalent in production source.
+
 **Forbidden:**
 - `expect(page).toBeDefined()` or any `expect(<variable>).toBeDefined()` — always true.
 - `expect(true).toBe(true)` or other tautologies.
