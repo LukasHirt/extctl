@@ -94,6 +94,34 @@ func LoadState(runsDir, date, id string) (*State, error) {
 	return &s, nil
 }
 
+// FindState scans all date subdirectories under runsDir and returns the first
+// build state found for the given candidate ID. Returns nil, nil if none exists.
+// Use this instead of LoadState when the candidate's build date may differ from
+// the slate date it was found in (e.g. a picked candidate carried over to a
+// newer slate).
+func FindState(runsDir, id string) (*State, error) {
+	entries, err := os.ReadDir(runsDir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read runs dir %s: %w", runsDir, err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		s, err := LoadState(runsDir, e.Name(), id)
+		if err != nil {
+			return nil, err
+		}
+		if s != nil {
+			return s, nil
+		}
+	}
+	return nil, nil
+}
+
 // SaveState atomically writes the build state to runs/<date>/<id>/state.json.
 func SaveState(runsDir string, s *State) error {
 	dir := buildDir(runsDir, s.Date, s.ID)

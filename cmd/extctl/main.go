@@ -296,8 +296,9 @@ var approvePlanCmd = &cobra.Command{
 			return fmt.Errorf("candidate %q not found in any slate", candidateID)
 		}
 
-		// Load build state.
-		bs, err := build.LoadState(cfg.RunsDir, date, candidate.ID)
+		// Load build state — scan all dates because a picked candidate may have
+		// been carried over into a newer slate, making slates[i].Date wrong.
+		bs, err := build.FindState(cfg.RunsDir, candidate.ID)
 		if err != nil {
 			return fmt.Errorf("load build state: %w", err)
 		}
@@ -307,6 +308,7 @@ var approvePlanCmd = &cobra.Command{
 		if bs.Phase != build.PhasePlanReview && bs.Phase != build.PhaseStaging {
 			return fmt.Errorf("candidate %s is not in plan_review phase (current: %s)", candidate.ID, bs.Phase)
 		}
+		date = bs.Date
 
 		// Check plan.md exists.
 		planPath := filepath.Join(cfg.RunsDir, date, candidate.ID, "plan.md")
@@ -393,8 +395,9 @@ var approveStagesCmd = &cobra.Command{
 			return fmt.Errorf("candidate %q not found in any slate", candidateID)
 		}
 
-		// Load build state.
-		bs, err := build.LoadState(cfg.RunsDir, date, candidate.ID)
+		// Load build state — scan all dates because a picked candidate may have
+		// been carried over into a newer slate, making slates[i].Date wrong.
+		bs, err := build.FindState(cfg.RunsDir, candidate.ID)
 		if err != nil {
 			return fmt.Errorf("load build state: %w", err)
 		}
@@ -407,6 +410,7 @@ var approveStagesCmd = &cobra.Command{
 			bs.Phase != build.PhaseRepairing {
 			return fmt.Errorf("candidate %s is not in stages_review phase (current: %s)", candidate.ID, bs.Phase)
 		}
+		date = bs.Date
 
 		// Check stages.md exists.
 		stagesPath := filepath.Join(cfg.RunsDir, date, candidate.ID, "stages.md")
