@@ -248,6 +248,7 @@ if [ -n "$MAIN_CHECKOUT" ]; then
   # already has the extension's dist bind mount. Down first to ensure no
   # leftover containers from a previous run.
   log "e2e: starting fresh oCIS stack from worktree…"
+  docker compose -f "$MAIN_CHECKOUT/docker-compose.yml" down 2>&1 | tee -a "$LOG" || true
   docker compose -f "$WORKTREE/docker-compose.yml" down 2>&1 | tee -a "$LOG" || true
   docker compose -f "$WORKTREE/docker-compose.yml" up -d 2>&1 | tee -a "$LOG"
 
