@@ -262,7 +262,7 @@ if [ -n "$MAIN_CHECKOUT" ]; then
 
   # CI=true switches Playwright to its non-interactive reporter (no cursor-up/erase lines).
   # The sed strips any remaining ANSI escape sequences so gate.log stays plain text.
-  if ! (cd "$EXT_DIR" && CI=true pnpm playwright test 2>&1 \
+  if ! (cd "$EXT_DIR" && CI=true pnpm playwright test --retries=0 2>&1 \
       | sed $'s/\x1b\\[[0-9;]*[a-zA-Z]//g' \
       | tee -a "$LOG"); then
     e2e_result="fail"
