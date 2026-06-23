@@ -238,7 +238,7 @@ var gateCmd = &cobra.Command{
 			return err
 		}
 
-		result, err := gate.Run(scriptPath, worktreePath, candidateID, outputDir, 1, cfg.TargetRepo.Checkout)
+		result, err := gate.Run(scriptPath, worktreePath, candidateID, outputDir, 1, cfg.TargetRepo.Checkout, candidateID)
 		if err != nil {
 			return err
 		}
@@ -474,7 +474,7 @@ var approveStagesCmd = &cobra.Command{
 		// stage never fails simply because the stack wasn't started.
 		if cfg.TargetRepo.Checkout != "" {
 			fmt.Printf("[%s] pre-flight: ensuring oCIS is running in %s…\n", candidate.ID, cfg.TargetRepo.Checkout)
-			if err := gate.EnsureOCIS(cfg.TargetRepo.Checkout); err != nil {
+			if err := gate.EnsureOCIS(cfg.TargetRepo.Checkout, candidate.ID); err != nil {
 				return fmt.Errorf("ocis pre-flight: %w", err)
 			}
 		}
@@ -540,7 +540,7 @@ var approveStagesCmd = &cobra.Command{
 			_ = build.SaveState(cfg.RunsDir, bs)
 
 			bulletCount := countSpecBullets(candidate.SpecMD)
-			gateResult, gateErr := gate.Run(absGateScript, worktreePath, candidate.ID, outputDir, bulletCount, cfg.TargetRepo.Checkout)
+			gateResult, gateErr := gate.Run(absGateScript, worktreePath, candidate.ID, outputDir, bulletCount, cfg.TargetRepo.Checkout, candidate.ID)
 			if gateErr != nil {
 				bs.Phase = build.PhaseBlocked
 				bs.ErrorMsg = "gate error: " + gateErr.Error()
@@ -600,7 +600,7 @@ var approveStagesCmd = &cobra.Command{
 				bs.Phase = build.PhaseGating
 				_ = build.SaveState(cfg.RunsDir, bs)
 
-				gateResult, gateErr = gate.Run(absGateScript, worktreePath, candidate.ID, outputDir, bulletCount, cfg.TargetRepo.Checkout)
+				gateResult, gateErr = gate.Run(absGateScript, worktreePath, candidate.ID, outputDir, bulletCount, cfg.TargetRepo.Checkout, candidate.ID)
 				if gateErr != nil {
 					bs.Phase = build.PhaseBlocked
 					bs.ErrorMsg = "gate error after repair: " + gateErr.Error()

@@ -163,12 +163,12 @@ stage_ok hygiene
 log ""
 log "--- Stage 2: build ---"
 
-if ! (cd "$EXT_DIR" && pnpm install --frozen-lockfile >> "$LOG" 2>&1); then
+if ! (cd "$EXT_DIR" && pnpm install --frozen-lockfile 2>&1 | tee -a "$LOG"); then
   stage_fail build "pnpm install --frozen-lockfile failed"
   write_json false; exit 1
 fi
 
-if ! (cd "$EXT_DIR" && pnpm build >> "$LOG" 2>&1); then
+if ! (cd "$EXT_DIR" && pnpm build 2>&1 | tee -a "$LOG"); then
   stage_fail build "pnpm build failed"
   write_json false; exit 1
 fi
@@ -181,12 +181,12 @@ stage_ok build
 log ""
 log "--- Stage 3: static ---"
 
-if ! (cd "$EXT_DIR" && pnpm lint >> "$LOG" 2>&1); then
+if ! (cd "$EXT_DIR" && pnpm lint 2>&1 | tee -a "$LOG"); then
   stage_fail lint "pnpm lint failed"
   write_json false; exit 1
 fi
 
-if ! (cd "$EXT_DIR" && pnpm check:types >> "$LOG" 2>&1); then
+if ! (cd "$EXT_DIR" && pnpm check:types 2>&1 | tee -a "$LOG"); then
   stage_fail lint "tsc --noEmit failed"
   write_json false; exit 1
 fi
@@ -199,7 +199,7 @@ stage_ok lint
 log ""
 log "--- Stage 4: unit ---"
 
-if ! (cd "$EXT_DIR" && pnpm test >> "$LOG" 2>&1); then
+if ! (cd "$EXT_DIR" && pnpm test 2>&1 | tee -a "$LOG"); then
   stage_fail unit "pnpm test failed"
   write_json false; exit 1
 fi
@@ -249,9 +249,9 @@ if [ -n "$MAIN_CHECKOUT" ]; then
   # Inject the built extension; oCIS only scans /web/apps at startup, so restart.
   # Run mkdir as root: the container process user has no write permission on /web/apps/
   # for extensions that don't yet have a bind-mount in the running compose stack.
-  docker exec -u root "$CONTAINER" mkdir -p "/web/apps/$EXT_ID" >> "$LOG" 2>&1
-  docker cp "$EXT_DIR/dist/." "$CONTAINER:/web/apps/$EXT_ID/" >> "$LOG" 2>&1
-  docker restart "$CONTAINER" >> "$LOG" 2>&1
+  docker exec -u root "$CONTAINER" mkdir -p "/web/apps/$EXT_ID" 2>&1 | tee -a "$LOG"
+  docker cp "$EXT_DIR/dist/." "$CONTAINER:/web/apps/$EXT_ID/" 2>&1 | tee -a "$LOG"
+  docker restart "$CONTAINER" 2>&1 | tee -a "$LOG"
 
   OCIS_URL="https://host.docker.internal:9200"
   for _ in $(seq 1 30); do
@@ -259,14 +259,14 @@ if [ -n "$MAIN_CHECKOUT" ]; then
     sleep 2
   done
 
-  if ! (cd "$EXT_DIR" && pnpm playwright test >> "$LOG" 2>&1); then
-    docker exec -u root "$CONTAINER" rm -rf "/web/apps/$EXT_ID" >> "$LOG" 2>&1 || true
+  if ! (cd "$EXT_DIR" && pnpm playwright test 2>&1 | tee -a "$LOG"); then
+    docker exec -u root "$CONTAINER" rm -rf "/web/apps/$EXT_ID" 2>&1 | tee -a "$LOG" || true
     e2e_result="fail"
     stage_fail e2e "playwright tests failed"
     write_json false; exit 1
   fi
 
-  docker exec -u root "$CONTAINER" rm -rf "/web/apps/$EXT_ID" >> "$LOG" 2>&1 || true
+  docker exec -u root "$CONTAINER" rm -rf "/web/apps/$EXT_ID" 2>&1 | tee -a "$LOG" || true
   e2e_result="ok"
   stage_ok e2e
 

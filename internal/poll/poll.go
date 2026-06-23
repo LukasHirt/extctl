@@ -618,7 +618,7 @@ func runGate(opts Options, worktreePath, extID, outputDir, specMD string) (*gate
 	if err != nil {
 		return nil, fmt.Errorf("resolve gate script path: %w", err)
 	}
-	return gate.Run(absScript, worktreePath, extID, outputDir, bulletCount, opts.Config.TargetRepo.Checkout)
+	return gate.Run(absScript, worktreePath, extID, outputDir, bulletCount, opts.Config.TargetRepo.Checkout, extID)
 }
 
 // countBullets counts bullet lines as a rough acceptance-bullet count.
