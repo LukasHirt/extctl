@@ -6,13 +6,10 @@ import { test, expect } from '@playwright/test'
 // TODO(generated): implement one test per acceptance bullet from CANDIDATE spec.
 
 test.describe('{{EXT_TITLE}}', () => {
-  test.beforeEach(async ({ page }) => {
-    // TODO(generated): navigate to the relevant oCIS page
-    await page.goto('/')
-  })
-
-  test('placeholder — replace with first acceptance bullet', async ({ page }) => {
+  test('placeholder — replace with first acceptance bullet', async ({
+    page,
+  }) => {
     // TODO(generated): implement acceptance test
-    expect(page).toBeDefined()
+    await expect(page.locator('body')).toBeVisible()
   })
 })
