@@ -246,7 +246,9 @@ if [ -n "$MAIN_CHECKOUT" ]; then
   fi
 
   # Inject the built extension; oCIS only scans /web/apps at startup, so restart.
-  docker exec "$CONTAINER" mkdir -p "/web/apps/$EXT_ID" >> "$LOG" 2>&1
+  # Run mkdir as root: the container process user has no write permission on /web/apps/
+  # for extensions that don't yet have a bind-mount in the running compose stack.
+  docker exec -u root "$CONTAINER" mkdir -p "/web/apps/$EXT_ID" >> "$LOG" 2>&1
   docker cp "$EXT_DIR/dist/." "$CONTAINER:/web/apps/$EXT_ID/" >> "$LOG" 2>&1
   docker restart "$CONTAINER" >> "$LOG" 2>&1
 
@@ -257,13 +259,13 @@ if [ -n "$MAIN_CHECKOUT" ]; then
   done
 
   if ! (cd "$EXT_DIR" && pnpm playwright test >> "$LOG" 2>&1); then
-    docker exec "$CONTAINER" rm -rf "/web/apps/$EXT_ID" >> "$LOG" 2>&1 || true
+    docker exec -u root "$CONTAINER" rm -rf "/web/apps/$EXT_ID" >> "$LOG" 2>&1 || true
     e2e_result="fail"
     stage_fail e2e "playwright tests failed"
     write_json false; exit 1
   fi
 
-  docker exec "$CONTAINER" rm -rf "/web/apps/$EXT_ID" >> "$LOG" 2>&1 || true
+  docker exec -u root "$CONTAINER" rm -rf "/web/apps/$EXT_ID" >> "$LOG" 2>&1 || true
   e2e_result="ok"
   stage_ok e2e
 
