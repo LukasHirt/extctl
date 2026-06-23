@@ -128,7 +128,15 @@ instance. Write real tests that log in, navigate, and assert visible state.
   )
   ```
 
-- When a click is blocked by a modal, overlay, or backdrop: read the component's source file first to identify the actual dismissal mechanism (close button selector, emitted event, keyboard binding, etc.), then add a step that uses that specific mechanism before the click. Do NOT guess with generic shortcuts like `Escape` without confirming the component handles them. Do NOT set `pointer-events: none`, `display: none`, or any equivalent in production source.
+- When a click is blocked by a modal, overlay, or backdrop: read the component's source file first to identify the actual dismissal mechanism. Then either:
+  - Add a `page.addLocatorHandler()` call at the top of the test that auto-fires the dismissal whenever that overlay intercepts a click:
+    ```typescript
+    await page.addLocatorHandler(page.locator('.oc-modal-background'), async () => {
+      await page.locator('.oc-modal-body-actions-cancel').click()
+    })
+    ```
+  - Or add an explicit dismissal step immediately before the blocked click, using the specific mechanism you found in the source.
+  For `OcModal` specifically: dismiss via `.oc-modal-body-actions-cancel` (cancel button). Prefer `addLocatorHandler` when the overlay can reappear across multiple steps. Do NOT set `pointer-events: none`, `display: none`, or any equivalent in production source.
 
 **Forbidden:**
 - `expect(page).toBeDefined()` or any `expect(<variable>).toBeDefined()` — always true.
