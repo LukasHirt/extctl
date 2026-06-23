@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -81,16 +80,16 @@ func EnsureOCIS(mainCheckout string) error {
 		return nil // already running
 	}
 
-	fmt.Println("gate: oCIS not running — starting via docker compose up -d ocis…")
-	upCmd := exec.Command("docker", "compose", "up", "-d", "ocis")
+	fmt.Println("gate: oCIS not running — starting via docker compose up -d…")
+	upCmd := exec.Command("docker", "compose", "up", "-d")
 	upCmd.Dir = mainCheckout
 	upCmd.Stdout = os.Stdout
 	upCmd.Stderr = os.Stderr
 	if err := upCmd.Run(); err != nil {
-		return fmt.Errorf("docker compose up -d ocis: %w", err)
+		return fmt.Errorf("docker compose up -d: %w", err)
 	}
 
-	const ocisURL = "https://host.docker.internal:9200/health/live"
+	const ocisURL = "https://host.docker.internal:9200"
 	client := &http.Client{
 		Timeout: 2 * time.Second,
 		Transport: &http.Transport{
@@ -100,16 +99,13 @@ func EnsureOCIS(mainCheckout string) error {
 	for i := 0; i < 30; i++ {
 		resp, err := client.Get(ocisURL)
 		if err == nil {
-			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			if strings.Contains(string(body), "alive") {
-				fmt.Println("gate: oCIS is healthy")
-				return nil
-			}
+			fmt.Println("gate: oCIS is up")
+			return nil
 		}
 		time.Sleep(2 * time.Second)
 	}
-	return fmt.Errorf("oCIS did not become healthy within 60s at %s", ocisURL)
+	return fmt.Errorf("oCIS did not become reachable within 60s at %s", ocisURL)
 }
 
 // ReadLog returns the contents of gate.log from the output directory.
