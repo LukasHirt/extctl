@@ -249,12 +249,24 @@ if [ -n "$MAIN_CHECKOUT" ]; then
     write_json false; exit 1
   fi
 
-  # Inject the built extension; oCIS only scans /web/apps at startup, so restart.
-  # Run mkdir as root: the container process user has no write permission on /web/apps/
-  # for extensions that don't yet have a bind-mount in the running compose stack.
-  docker exec -u root "$CONTAINER" mkdir -p "/web/apps/$EXT_ID" 2>&1 | tee -a "$LOG"
-  docker cp "$EXT_DIR/dist/." "$CONTAINER:/web/apps/$EXT_ID/" 2>&1 | tee -a "$LOG"
-  docker restart "$CONTAINER" 2>&1 | tee -a "$LOG"
+  # Derive the compose project name from the running container so we can update
+  # it (not create a new stack) when running compose from the worktree directory.
+  PROJ=$(docker inspect "$CONTAINER" \
+    --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null \
+    || basename "$MAIN_CHECKOUT")
+
+  # Inject the built extension by recreating oCIS with the worktree's
+  # docker-compose.yml, which Claude has already added the extension's dist
+  # volume mount to. Using compose (a bind mount) instead of docker cp avoids
+  # the overlay-filesystem MIME-type bug where oCIS serves .js files as text/html.
+  # The -p flag keeps us in the same compose project so existing containers are
+  # updated rather than a new stack being created.
+  log "e2e: recreating oCIS with worktree compose (project: $PROJ)…"
+  docker compose -p "$PROJ" -f "$WORKTREE/docker-compose.yml" \
+    up -d --force-recreate ocis 2>&1 | tee -a "$LOG"
+
+  # Update the trap to restore oCIS on any exit (pass/fail/interrupt).
+  trap 'docker compose -p "$PROJ" -f "$MAIN_CHECKOUT/docker-compose.yml" up -d --force-recreate ocis 2>/dev/null | tee -a "$LOG" || true; rmdir "$E2E_LOCK" 2>/dev/null || rm -rf "$E2E_LOCK" 2>/dev/null || true; write_json "$overall"' EXIT
 
   OCIS_URL="https://host.docker.internal:9200"
   for _ in $(seq 1 30); do
@@ -267,18 +279,21 @@ if [ -n "$MAIN_CHECKOUT" ]; then
   if ! (cd "$EXT_DIR" && CI=true pnpm playwright test 2>&1 \
       | sed $'s/\x1b\\[[0-9;]*[a-zA-Z]//g' \
       | tee -a "$LOG"); then
-    docker exec -u root "$CONTAINER" rm -rf "/web/apps/$EXT_ID" 2>&1 | tee -a "$LOG" || true
     e2e_result="fail"
     stage_fail e2e "playwright tests failed"
     write_json false; exit 1
   fi
 
-  docker exec -u root "$CONTAINER" rm -rf "/web/apps/$EXT_ID" 2>&1 | tee -a "$LOG" || true
   e2e_result="ok"
   stage_ok e2e
 
+  # Restore oCIS to the main checkout's original volume set.
+  log "e2e: restoring oCIS to main checkout compose…"
+  docker compose -p "$PROJ" -f "$MAIN_CHECKOUT/docker-compose.yml" \
+    up -d --force-recreate ocis 2>&1 | tee -a "$LOG" || true
+
   # Release the lock and restore the plain gate.json trap.
-  rm -rf "$E2E_LOCK" 2>/dev/null || true
+  rmdir "$E2E_LOCK" 2>/dev/null || rm -rf "$E2E_LOCK" 2>/dev/null || true
   trap 'write_json "$overall"' EXIT
 fi
 
