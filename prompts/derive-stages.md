@@ -47,6 +47,9 @@ Think in terms of natural build layers. A good stage sequence looks like:
 
 1. **Scaffold** — set up the package directory structure, `package.json`,
    `vite.config.ts`, entry point, and any config files. No logic yet.
+   **Always include the three registration files in this stage** (the
+   `docker-compose.yml` volume mount and both `ocis.apps.yaml` entries) — they
+   must be present from the first gate run so oCIS can discover the extension.
 2. **Core logic** — implement the main TypeScript/Vue composables, services,
    or utilities the extension depends on.
 3. **UI** — build Vue components and wire them to the core logic. Use the
