@@ -259,7 +259,11 @@ if [ -n "$MAIN_CHECKOUT" ]; then
     sleep 2
   done
 
-  if ! (cd "$EXT_DIR" && pnpm playwright test 2>&1 | tee -a "$LOG"); then
+  # CI=true switches Playwright to its non-interactive reporter (no cursor-up/erase lines).
+  # The sed strips any remaining ANSI escape sequences so gate.log stays plain text.
+  if ! (cd "$EXT_DIR" && CI=true pnpm playwright test 2>&1 \
+      | sed $'s/\x1b\\[[0-9;]*[a-zA-Z]//g' \
+      | tee -a "$LOG"); then
     docker exec -u root "$CONTAINER" rm -rf "/web/apps/$EXT_ID" 2>&1 | tee -a "$LOG" || true
     e2e_result="fail"
     stage_fail e2e "playwright tests failed"

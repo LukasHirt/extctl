@@ -44,17 +44,15 @@ func Run(scriptPath, worktreePath, extID, outputDir string, specBulletCount int,
 
 	args := []string{worktreePath, extID, outputDir, fmt.Sprintf("%d", specBulletCount), mainCheckout}
 	cmd := exec.Command(scriptPath, args...)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
 
+	// Create gate.log so the script can open it with O_APPEND via "tee -a $LOG".
+	// Do NOT redirect cmd.Stdout/Stderr here — the script owns all writes to its
+	// LOG variable via tee; pointing cmd.Stdout at the same file would cause every
+	// line to be written twice, corrupting the cursor-position accounting in renderANSI.
 	logPath := filepath.Join(outputDir, "gate.log")
-	logFile, err := os.Create(logPath)
-	if err != nil {
+	if err := os.WriteFile(logPath, nil, 0o644); err != nil {
 		return nil, fmt.Errorf("create gate.log: %w", err)
 	}
-	defer logFile.Close()
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
 
 	fmt.Printf("\n%sgate: running %s…\n", prefix, scriptPath)
 	_ = cmd.Run() // exit code is encoded in gate.json; don't treat non-zero as a Go error
