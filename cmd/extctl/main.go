@@ -470,6 +470,15 @@ var approveStagesCmd = &cobra.Command{
 			maxRepairs = 1
 		}
 
+		// Pre-flight: ensure oCIS is running before the build loop so the e2e
+		// stage never fails simply because the stack wasn't started.
+		if cfg.TargetRepo.Checkout != "" {
+			fmt.Printf("[%s] pre-flight: ensuring oCIS is running in %s…\n", candidate.ID, cfg.TargetRepo.Checkout)
+			if err := gate.EnsureOCIS(cfg.TargetRepo.Checkout); err != nil {
+				return fmt.Errorf("ocis pre-flight: %w", err)
+			}
+		}
+
 		for i, stageDesc := range stages {
 			stageNum := i + 1
 			if stageNum < bs.CurrentStage {
