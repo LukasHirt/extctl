@@ -76,9 +76,18 @@ if ( cd "$WORKTREE" && git status --porcelain | grep -q . ); then
 fi
 
 # Diff must be confined to packages/web-app-<ext-id>/ (root pnpm-lock.yaml is allowed
-# since pnpm updates it automatically when a new workspace package is scaffolded).
-DIFF_FILES=$(cd "$WORKTREE" && git diff HEAD~1 --name-only 2>/dev/null || git diff --name-only HEAD)
-OUTSIDE=$(echo "$DIFF_FILES" | grep -v "^packages/web-app-$EXT_ID/" | grep -v "^pnpm-lock.yaml$" || true)
+# since pnpm updates it automatically when a new workspace package is scaffolded, and the
+# three registration files below are allowed since every new extension must register itself
+# in docker-compose.yml and both ocis.apps.yaml files for local dev, GHA, and oCIS discovery).
+DIFF_BASE=$(cd "$WORKTREE" && git merge-base HEAD main 2>/dev/null || echo "HEAD~1")
+DIFF_FILES=$(cd "$WORKTREE" && git diff "$DIFF_BASE"..HEAD --name-only 2>/dev/null || git diff --name-only HEAD)
+OUTSIDE=$(echo "$DIFF_FILES" \
+  | grep -v "^packages/web-app-$EXT_ID/" \
+  | grep -v "^pnpm-lock\.yaml$" \
+  | grep -v "^docker-compose\.yml$" \
+  | grep -v "^dev/docker/ocis\.apps\.yaml$" \
+  | grep -v "^support/actions/ocis\.apps\.yaml$" \
+  || true)
 if [ -n "$OUTSIDE" ]; then
   stage_fail hygiene "diff contains files outside packages/web-app-$EXT_ID/: $OUTSIDE"
   write_json false; exit 1
