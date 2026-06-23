@@ -242,36 +242,21 @@ if [ -n "$MAIN_CHECKOUT" ]; then
   # Release the lock on any exit from here on, in addition to writing gate.json.
   trap 'rmdir "$E2E_LOCK" 2>/dev/null || rm -rf "$E2E_LOCK" 2>/dev/null || true; write_json "$overall"' EXIT
 
-  CONTAINER=$(cd "$MAIN_CHECKOUT" && docker compose ps -q ocis 2>/dev/null || true)
-  if [ -z "$CONTAINER" ]; then
-    e2e_result="fail"
-    stage_fail e2e "oCIS not running in $MAIN_CHECKOUT — run: docker compose up -d"
-    write_json false; exit 1
-  fi
-
-  # Derive the compose project name from the running container so we can update
-  # it (not create a new stack) when running compose from the worktree directory.
-  PROJ=$(docker inspect "$CONTAINER" \
-    --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null \
-    || basename "$MAIN_CHECKOUT")
-
-  # Inject the built extension by recreating oCIS with the worktree's
-  # docker-compose.yml, which Claude has already added the extension's dist
-  # volume mount to. Using compose (a bind mount) instead of docker cp avoids
-  # the overlay-filesystem MIME-type bug where oCIS serves .js files as text/html.
-  # The -p flag keeps us in the same compose project so existing containers are
-  # updated rather than a new stack being created.
-  log "e2e: recreating oCIS with worktree compose (project: $PROJ)…"
-  docker compose -p "$PROJ" -f "$WORKTREE/docker-compose.yml" \
-    up -d --force-recreate ocis 2>&1 | tee -a "$LOG"
-
-  # Update the trap to restore oCIS on any exit (pass/fail/interrupt).
-  trap 'docker compose -p "$PROJ" -f "$MAIN_CHECKOUT/docker-compose.yml" up -d --force-recreate ocis 2>/dev/null | tee -a "$LOG" || true; rmdir "$E2E_LOCK" 2>/dev/null || rm -rf "$E2E_LOCK" 2>/dev/null || true; write_json "$overall"' EXIT
-
   OCIS_URL="https://host.docker.internal:9200"
-  for _ in $(seq 1 30); do
+
+  # Bring up a fresh stack from the worktree's docker-compose.yml, which
+  # already has the extension's dist bind mount. Down first to ensure no
+  # leftover containers from a previous run.
+  log "e2e: starting fresh oCIS stack from worktree…"
+  docker compose -f "$WORKTREE/docker-compose.yml" down 2>&1 | tee -a "$LOG" || true
+  docker compose -f "$WORKTREE/docker-compose.yml" up -d 2>&1 | tee -a "$LOG"
+
+  # Tear down on any exit (pass/fail/interrupt).
+  trap 'docker compose -f "$WORKTREE/docker-compose.yml" down 2>/dev/null | tee -a "$LOG" || true; rmdir "$E2E_LOCK" 2>/dev/null || rm -rf "$E2E_LOCK" 2>/dev/null || true; write_json "$overall"' EXIT
+
+  for _ in $(seq 1 60); do
     if curl -sk --max-time 2 "$OCIS_URL/health/live" | grep -q "alive"; then break; fi
-    sleep 2
+    sleep 3
   done
 
   # CI=true switches Playwright to its non-interactive reporter (no cursor-up/erase lines).
@@ -287,12 +272,10 @@ if [ -n "$MAIN_CHECKOUT" ]; then
   e2e_result="ok"
   stage_ok e2e
 
-  # Restore oCIS to the main checkout's original volume set.
-  log "e2e: restoring oCIS to main checkout compose…"
-  docker compose -p "$PROJ" -f "$MAIN_CHECKOUT/docker-compose.yml" \
-    up -d --force-recreate ocis 2>&1 | tee -a "$LOG" || true
+  log "e2e: tearing down worktree stack…"
+  docker compose -f "$WORKTREE/docker-compose.yml" down 2>&1 | tee -a "$LOG" || true
 
-  # Release the lock and restore the plain gate.json trap.
+  # Lock released; restore plain gate.json trap.
   rmdir "$E2E_LOCK" 2>/dev/null || rm -rf "$E2E_LOCK" 2>/dev/null || true
   trap 'write_json "$overall"' EXIT
 fi
