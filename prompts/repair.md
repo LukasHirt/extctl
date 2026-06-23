@@ -16,9 +16,9 @@ Your task is to fix the failing stage(s) and recommit.
 
 1. Fix only the failing stage(s) shown in the log above.
 2. Do NOT modify `gate/run-gate.sh` or any file in `gate/`.
-3. Do NOT modify or delete `acceptance.spec.ts` to make tests pass — fix the implementation instead.
-4. Do NOT weaken lint rules or add `// eslint-disable` to silence errors.
-5. Do NOT add `.only`, `.skip`, or `test.todo` to acceptance tests.
+3. Do NOT weaken tests: do not remove assertions, replace them with tautologies, or add `.only`, `.skip`, or `test.todo`.
+4. When an e2e test fails because a modal, overlay, or backdrop is blocking a click: fix the **test** by adding steps to close or dismiss the element before the next action. Do NOT modify production source (components, CSS, composables, or any `.vue`/`.ts` file) to make the element click-through — setting `pointer-events: none`, `display: none`, or any equivalent bypass in production code is always wrong here.
+5. Do NOT weaken lint rules or add `// eslint-disable` to silence errors.
 6. Touch ONLY `packages/web-app-{{EXT_ID}}/`. Never edit other packages or pipeline files.
 7. No hardcoded provider hostnames, API keys, or secrets.
 
