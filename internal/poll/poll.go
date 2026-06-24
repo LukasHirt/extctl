@@ -221,7 +221,7 @@ func Run(opts Options) (*Result, error) {
 // transition extctl performs.
 func checkMergedPRs(opts Options, date string, slate *state.Slate, jiraClient *jira.Client) {
 	for _, c := range slate.Candidates {
-		bs, err := build.LoadState(opts.Config.RunsDir, date, c.ID)
+		bs, err := build.FindState(opts.Config.RunsDir, c.ID)
 		if err != nil || bs == nil || bs.Phase != build.PhaseDone || bs.PR == nil {
 			continue
 		}
@@ -254,9 +254,16 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 	runsDir := opts.Config.RunsDir
 
 	// Idempotency: check existing build state.
-	bs, err := build.LoadState(runsDir, date, candidate.ID)
+	// FindState scans all date dirs so carryover candidates whose build was
+	// started under an earlier date are recognised correctly.
+	bs, err := build.FindState(runsDir, candidate.ID)
 	if err != nil {
 		return fmt.Errorf("load build state: %w", err)
+	}
+	// Use the build's original date for all path operations so the worktree,
+	// lock, and state files stay under the directory where they were created.
+	if bs != nil {
+		date = bs.Date
 	}
 	logf := func(format string, args ...any) {
 		fmt.Printf("["+candidate.ID+"] "+format, args...)
