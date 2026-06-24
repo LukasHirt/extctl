@@ -47,7 +47,8 @@ var buildTools = []string{
 }
 
 // Repair runs a single repair attempt on gate failure using the same Claude session.
-func Repair(opts Options, gateLog string, sessionID string) (*RunResult, error) {
+// attempt is 1-indexed and is used to name the output file (repair-1.jsonl, repair-2.jsonl, …).
+func Repair(opts Options, gateLog string, sessionID string, attempt int) (*RunResult, error) {
 	promptPath := opts.Config.Prompts.Repair
 	promptBytes, err := os.ReadFile(promptPath)
 	if err != nil {
@@ -58,7 +59,8 @@ func Repair(opts Options, gateLog string, sessionID string) (*RunResult, error) 
 		"{{GATE_LOG}}": gateLog,
 	})
 
-	outputFile := filepath.Join(opts.Config.RunsDir, opts.Date, opts.CandidateID, "repair.jsonl")
+	outputFile := filepath.Join(opts.Config.RunsDir, opts.Date, opts.CandidateID,
+		fmt.Sprintf("repair-%d.jsonl", attempt))
 
 	claudeOpts := claude.RunOptions{
 		Prompt:       prompt,

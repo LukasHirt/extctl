@@ -327,12 +327,14 @@ var approvePlanCmd = &cobra.Command{
 		// Run stage derivation — skip if stages.md already exists (crash-resume).
 		stagesPath := filepath.Join(cfg.RunsDir, date, candidate.ID, "stages.md")
 		if _, statErr := os.Stat(stagesPath); statErr != nil {
-			if err := build.DeriveStages(cfg, candidate.ID, planPath, stagesPath, candidate.IssueComments); err != nil {
+			stagesCost, err := build.DeriveStages(cfg, candidate.ID, planPath, stagesPath, candidate.IssueComments)
+			if err != nil {
 				bs.Phase = build.PhaseBlocked
 				bs.ErrorMsg = "stage derivation failed: " + err.Error()
 				_ = build.SaveState(cfg.RunsDir, bs)
 				return fmt.Errorf("derive stages: %w", err)
 			}
+			bs.CostUSD += stagesCost
 		} else {
 			fmt.Printf("[%s] approve-plan: stages.md already exists — skipping derivation\n", candidate.ID)
 		}
@@ -585,7 +587,7 @@ var approveStagesCmd = &cobra.Command{
 					Date:         date,
 					WorktreePath: worktreePath,
 					LogPrefix:    "[" + candidate.ID + "] ",
-				}, gateLog, stageSessionID)
+				}, gateLog, stageSessionID, repairAttempts)
 				if repairErr != nil {
 					bs.Phase = build.PhaseBlocked
 					bs.ErrorMsg = repairErr.Error()
