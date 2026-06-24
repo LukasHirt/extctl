@@ -18,11 +18,10 @@ type Config struct {
 	Claude                Claude     `yaml:"claude"`
 	Decay                 Decay      `yaml:"decay"`
 	Prompts               Prompts    `yaml:"prompts"`
-	IdeaPool      string   `yaml:"idea_pool"`
-	RunsDir       string   `yaml:"runs_dir"`
-	DeliveredYAML string   `yaml:"delivered_yaml"`
-	ScaffoldDir   string   `yaml:"scaffold_dir"`
-	Scaffold      Scaffold `yaml:"scaffold"`
+	IdeaPool      string `yaml:"idea_pool"`
+	RunsDir       string `yaml:"runs_dir"`
+	DeliveredYAML string `yaml:"delivered_yaml"`
+	ScaffoldDir   string `yaml:"scaffold_dir"`
 }
 
 type TargetRepo struct {
@@ -61,16 +60,6 @@ type Prompts struct {
 	BuildSummary string `yaml:"build_summary"`
 	Repair       string `yaml:"repair"`
 	Revise       string `yaml:"revise"`
-}
-
-// Scaffold controls how the extension template is sourced from the skeleton repo.
-type Scaffold struct {
-	// Source is the Git URL of the skeleton repository.
-	Source string `yaml:"source"`
-	// Exclude is a list of path prefixes (relative to the skeleton root) to skip
-	// when copying files into scaffold/. Paths ending in "/" match directories.
-	// Defaults are set by applyDefaults(); override here to add/remove entries.
-	Exclude []string `yaml:"exclude"`
 }
 
 // Defaults applied when fields are zero-valued.
@@ -147,40 +136,6 @@ func (c *Config) applyDefaults() {
 	if c.ScaffoldDir == "" {
 		c.ScaffoldDir = "scaffold"
 	}
-	if c.Scaffold.Source == "" {
-		c.Scaffold.Source = "https://github.com/owncloud/web-app-skeleton"
-	}
-	if len(c.Scaffold.Exclude) == 0 {
-		c.Scaffold.Exclude = defaultScaffoldExclude
-	}
-}
-
-// defaultScaffoldExclude is the out-of-the-box exclusion list for scaffold fetch.
-// It skips CI/CD infra, community docs, lock files, and files that extctl
-// owns (template-var files and our custom additions).
-var defaultScaffoldExclude = []string{
-	// Git and CI
-	".git/",
-	".github/",
-	// Local dev infra (paths are skeleton-specific)
-	"dev/",
-	"docker-compose.yml",
-	".vscode/",
-	// Package lock — regenerated per extension
-	"pnpm-lock.yaml",
-	// Community/repo metadata
-	"LICENSE",
-	"README.md",
-	"CHANGELOG.md",
-	"CONTRIBUTING.md",
-	"CODE_OF_CONDUCT.md",
-	"SECURITY.md",
-	"SUPPORT.md",
-	".release_note",
-	// Template-var files owned by extctl scaffold (not sourced from skeleton as-is)
-	"src/",
-	"package.json",
-	"vite.config.ts",
 }
 
 // LoadDotEnv reads a .env file and sets any unset environment variables found

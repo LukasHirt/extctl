@@ -59,6 +59,7 @@ type State struct {
 	SessionID    string      `json:"session_id,omitempty"`
 	CostUSD      float64     `json:"cost_usd"`
 	Turns        int         `json:"turns"`
+	ScaffoldDone bool        `json:"scaffold_done,omitempty"`
 	CurrentStage int         `json:"current_stage,omitempty"`
 	TotalStages  int         `json:"total_stages,omitempty"`
 	ErrorMsg     string      `json:"error,omitempty"`

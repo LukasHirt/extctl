@@ -17,7 +17,6 @@ import (
 	githubpkg "github.com/LukasHirt/extctl/internal/github"
 	"github.com/LukasHirt/extctl/internal/jira"
 	"github.com/LukasHirt/extctl/internal/poll"
-	scaffoldpkg "github.com/LukasHirt/extctl/internal/scaffold"
 	"github.com/LukasHirt/extctl/internal/state"
 )
 
@@ -192,30 +191,6 @@ var pollCmd = &cobra.Command{
 			fmt.Printf("\nPicked: %s — %s\n  %s\n", p.JiraKey, p.Title, p.JiraURL)
 		}
 		return nil
-	},
-}
-
-// --- scaffold command ---
-
-var scaffoldCmd = &cobra.Command{
-	Use:   "scaffold",
-	Short: "Manage the extension scaffold template",
-}
-
-var scaffoldFetchCmd = &cobra.Command{
-	Use:     "fetch",
-	Aliases: []string{"init"},
-	Short:   "Fetch (or refresh) the scaffold from the skeleton repository",
-	Long: `Clones the configured skeleton repository, strips .git/, applies the
-exclusion list, and copies the result into the scaffold directory.
-Files already in scaffold/ that are not present in the skeleton (e.g.
-src/composables/useLLM.ts, tests/e2e/) are left untouched.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return scaffoldpkg.Fetch(scaffoldpkg.FetchOptions{
-			Source:  cfg.Scaffold.Source,
-			Exclude: cfg.Scaffold.Exclude,
-			DestDir: cfg.ScaffoldDir,
-		})
 	},
 }
 
@@ -481,6 +456,26 @@ var approveStagesCmd = &cobra.Command{
 			}
 		}
 
+		// Scaffold is an orchestrator action: create the package skeleton before
+		// handing off to Claude's stage loop. Idempotent — skipped on crash-resume.
+		if !bs.ScaffoldDone {
+			fmt.Printf("[%s] scaffold: creating package skeleton…\n", candidate.ID)
+			if err := build.ScaffoldExtension(build.ScaffoldOptions{
+				Config:       cfg,
+				CandidateID:  candidate.ID,
+				Title:        candidate.Title,
+				Description:  firstNonEmptyLine(candidate.SpecMD),
+				WorktreePath: worktreePath,
+				LogPrefix:    "[" + candidate.ID + "] ",
+			}); err != nil {
+				return fmt.Errorf("scaffold: %w", err)
+			}
+			bs.ScaffoldDone = true
+			if err := build.SaveState(cfg.RunsDir, bs); err != nil {
+				return fmt.Errorf("save state after scaffold: %w", err)
+			}
+		}
+
 		for i, stageDesc := range stages {
 			stageNum := i + 1
 			if stageNum < bs.CurrentStage {
@@ -723,6 +718,18 @@ var approveStagesCmd = &cobra.Command{
 }
 
 // countSpecBullets counts bullet lines in specMD for gate scoring.
+// firstNonEmptyLine returns the first non-empty, non-heading line of s, trimmed.
+// Used to extract a short description from a spec for the scaffold package.json.
+func firstNonEmptyLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		trimmed := strings.TrimSpace(strings.TrimLeft(line, "#"))
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 func countSpecBullets(specMD string) int {
 	n := 0
 	for _, line := range strings.Split(specMD, "\n") {
@@ -774,8 +781,7 @@ func init() {
 		"date to poll for in YYYY-MM-DD format (default: today)")
 
 	slateCmd.AddCommand(slateStatusCmd, slateCarryoversCmd)
-	scaffoldCmd.AddCommand(scaffoldFetchCmd)
-	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, scaffoldCmd, approvePlanCmd, approveStagesCmd, versionCmd)
+	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, approvePlanCmd, approveStagesCmd, versionCmd)
 }
 
 func main() {

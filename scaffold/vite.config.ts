@@ -3,7 +3,7 @@ import { defineConfig } from '@ownclouders/extension-sdk'
 export default defineConfig({
   name: '{{EXT_ID}}',
   server: {
-    port: 9731, // Increment this port number for each new extension.
+    port: {{VITE_PORT}},
   },
   build: {
     rollupOptions: {

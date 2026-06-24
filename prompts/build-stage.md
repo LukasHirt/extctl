@@ -57,43 +57,23 @@ what is described for stage {{STAGE_NUM}}.
   LLM-related code to understand the API. The composable enforces same-origin
   and attaches the oCIS token internally; you do not need to handle auth.
 - All new files must live inside `packages/web-app-{{EXT_ID}}/`.
-- Do NOT touch any files outside `packages/web-app-{{EXT_ID}}/`, **with the sole exception of
-  the three registration files** described in the section below.
+- Do NOT touch any files outside `packages/web-app-{{EXT_ID}}/`.
 - Do NOT push to remote. Do NOT open pull requests.
 
-## Registration files
+## Scaffold files already in place
 
-Every extension must be registered in three files so that oCIS, local dev, and GHA can discover
-it. **Add these entries exactly once — on the scaffold stage.** If the entries are already
-present (e.g. you are building a later stage), skip this step entirely.
+extctl created the package skeleton before this stage ran. The following files
+already exist — do not recreate them; edit or extend them as your stage requires:
 
-1. **`docker-compose.yml`** — add a volume mount under the `ocis` service `volumes:` list,
-   following the pattern of the existing extension mounts:
-   ```yaml
-   - ./packages/web-app-{{EXT_ID}}/dist:/web/apps/{{EXT_ID}}
-   ```
+- `package.json`, `vite.config.ts`, `tsconfig.json`, `playwright.config.ts`
+- `l10n/translations.json`, `l10n/.tx/config`
+- `tests/e2e/acceptance.spec.ts` (skeleton — replace with real tests in the tests stage)
+- `src/index.ts` (minimal `defineWebApplication` stub — extend it with contributions)
+- `src/composables/useLLM.ts` (LLM wrapper — read before writing any LLM calls)
+- `src/public/manifest.json`
 
-2. **`dev/docker/ocis.apps.yaml`** — add an entry keyed by `{{EXT_ID}}` (no `web-app-` prefix),
-   following the pattern of the existing entries:
-   ```yaml
-   {{EXT_ID}}:
-     config:
-       llm:
-         endpoint: 'https://host.docker.internal:9200/ai-llm-proxy/v1'
-         model: 'llama3.2'
-   ```
-
-3. **`support/actions/ocis.apps.yaml`** — add an entry keyed by `web-app-{{EXT_ID}}`,
-   following the pattern of the existing entries:
-   ```yaml
-   web-app-{{EXT_ID}}:
-     config:
-       llm:
-         endpoint: 'https://localhost:9200/ai-llm-proxy/v1'
-         model: 'llama3.2'
-   ```
-
-Read each file before editing to understand the exact indentation and ordering used.
+Registration entries in `docker-compose.yml`, `dev/docker/ocis.apps.yaml`, and
+`support/actions/ocis.apps.yaml` are already present. Do not re-add them.
 
 ## Security rules
 
