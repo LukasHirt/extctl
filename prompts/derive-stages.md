@@ -43,21 +43,26 @@ Rules:
 
 ## Stage guidelines
 
+> **Note:** The scaffold is created automatically by extctl before your first
+> stage runs. `packages/web-app-{{EXT_ID}}/` already exists with `package.json`,
+> `vite.config.ts`, `tsconfig.json`, `playwright.config.ts`, `l10n/`,
+> `tests/e2e/acceptance.spec.ts`, `src/index.ts`, and `src/composables/useLLM.ts`
+> in place. Registration entries in `docker-compose.yml` and both `ocis.apps.yaml`
+> files are also done. Your first stage is **core logic**.
+
 Think in terms of natural build layers. A good stage sequence looks like:
 
-1. **Scaffold** — set up the package directory structure, `package.json`,
-   `vite.config.ts`, entry point, and any config files. No logic yet.
-   **Always include the three registration files in this stage** (the
-   `docker-compose.yml` volume mount and both `ocis.apps.yaml` entries) — they
-   must be present from the first gate run so oCIS can discover the extension.
-2. **Core logic** — implement the main TypeScript/Vue composables, services,
-   or utilities the extension depends on.
-3. **UI** — build Vue components and wire them to the core logic. Use the
+1. **Core logic** — implement the main TypeScript/Vue composables, services,
+   or utilities the extension depends on. Edit `src/index.ts` to register the
+   extension's contributions. Add `src/App.vue` or other entry components as needed.
+2. **UI** — build Vue components and wire them to the core logic. Use the
    ownCloud design system (ODS) components.
-4. **Tests** — write Vitest unit tests for core logic and component behaviour.
-5. *(If the extension is complex, split any of the above into sub-steps.)*
+3. **Tests** — write Vitest unit tests for core logic and component behaviour.
+   Replace the acceptance spec skeleton in `tests/e2e/acceptance.spec.ts` with
+   real Playwright tests for each acceptance bullet.
+4. *(If the extension is complex, split any of the above into sub-steps.)*
 
-Aim for 4–7 stages total. Avoid stages that are too fine-grained (e.g.
+Aim for 3–6 stages total. Avoid stages that are too fine-grained (e.g.
 "Create one composable function") or too coarse (e.g. "Build everything").
 Each stage should be completable in a single focused Claude invocation.
 
