@@ -23,13 +23,12 @@ var stagesTools = []string{"Read", "Write"}
 var stageLineRe = regexp.MustCompile(`^- \[[ x]\] (\d+)\. (.+)$`)
 
 // DeriveStages invokes Claude to read planPath and write stages.md to stagesPath.
-// It reads the derive-stages.md prompt template, substitutes template variables,
-// and invokes Claude headlessly in the web-extensions checkout.
-func DeriveStages(cfg *config.Config, id, planPath, stagesPath, issueComments string) error {
+// Returns the Claude invocation cost in USD.
+func DeriveStages(cfg *config.Config, id, planPath, stagesPath, issueComments string) (float64, error) {
 	promptPath := cfg.Prompts.DeriveStages
 	promptBytes, err := os.ReadFile(promptPath)
 	if err != nil {
-		return fmt.Errorf("read derive-stages prompt %s: %w", promptPath, err)
+		return 0, fmt.Errorf("read derive-stages prompt %s: %w", promptPath, err)
 	}
 
 	prompt := renderTemplate(string(promptBytes), map[string]string{
@@ -54,16 +53,16 @@ func DeriveStages(cfg *config.Config, id, planPath, stagesPath, issueComments st
 
 	result, err := claude.Run(claudeOpts)
 	if err != nil {
-		return fmt.Errorf("claude derive-stages run: %w", err)
+		return 0, fmt.Errorf("claude derive-stages run: %w", err)
 	}
 	if result.IsError {
-		return fmt.Errorf("claude derive-stages returned error: %s", result.Result)
+		return 0, fmt.Errorf("claude derive-stages returned error: %s", result.Result)
 	}
 	if result.Result == "" {
-		return fmt.Errorf("claude derive-stages returned empty result")
+		return 0, fmt.Errorf("claude derive-stages returned empty result")
 	}
 
-	return nil
+	return result.TotalCostUSD, nil
 }
 
 // docStageText is the canonical description of the fixed documentation stage.
