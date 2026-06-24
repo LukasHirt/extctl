@@ -354,12 +354,14 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 		}
 
 		logf("planning: generating plan.md…\n")
-		if err := build.Plan(opts.Config, candidate.ID, candidate.SpecMD, candidate.IssueComments, planPath); err != nil {
+		planCost, err := build.Plan(opts.Config, candidate.ID, candidate.SpecMD, candidate.IssueComments, planPath)
+		if err != nil {
 			bs.Phase = build.PhaseBlocked
 			bs.ErrorMsg = "planning failed: " + err.Error()
 			_ = build.SaveState(runsDir, bs)
 			return fmt.Errorf("plan %s: %w", candidate.ID, err)
 		}
+		bs.CostUSD += planCost
 	} else {
 		logf("planning: plan.md already exists — skipping generation\n")
 	}
@@ -419,7 +421,7 @@ func gateRepairPublish(opts Options, date string, candidate state.Candidate, bs 
 			Date:         date,
 			WorktreePath: worktreePath,
 			LogPrefix:    logPrefix,
-		}, gateLog, sessionID)
+		}, gateLog, sessionID, bs.Attempts+1)
 		if repairErr != nil {
 			return fmt.Errorf("repair attempt %d: %w", bs.Attempts, repairErr)
 		}
