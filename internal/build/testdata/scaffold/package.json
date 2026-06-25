@@ -1,0 +1,5 @@
+{
+  "name": "{{EXT_ID}}",
+  "version": "1.0.0",
+  "description": "{{EXT_DESCRIPTION}}"
+}

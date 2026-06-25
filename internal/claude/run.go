@@ -57,6 +57,10 @@ type contentBlock struct {
 	Input json.RawMessage `json:"input,omitempty"`
 }
 
+// execCommand is the exec.Command function used to invoke the claude CLI.
+// Replaced in tests to avoid calling the real binary.
+var execCommand = exec.Command
+
 // Run invokes claude -p headlessly with stream-json output, printing live
 // progress to stdout as Claude works. The raw JSONL is written to
 // opts.OutputFile if set. Returns the parsed final result.
@@ -73,11 +77,13 @@ func Run(opts RunOptions) (*Result, error) {
 	}
 	args = append(args, "--verbose", "--output-format", "stream-json")
 
-	cmd := exec.Command("claude", args...)
+	cmd := execCommand("claude", args...)
 	if opts.WorkDir != "" {
 		cmd.Dir = opts.WorkDir
 	}
-	cmd.Env = os.Environ()
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
+	}
 	cmd.Stdin = strings.NewReader(opts.Prompt)
 	cmd.Stderr = os.Stderr
 

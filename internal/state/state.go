@@ -65,7 +65,7 @@ func Load(runsDir, date string) (*Slate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open slate %s: %w", path, err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	var s Slate
 	if err := json.NewDecoder(f).Decode(&s); err != nil {
@@ -92,16 +92,16 @@ func Save(runsDir string, s *Slate) error {
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(s); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("encode slate: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("close temp file: %w", err)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("rename slate: %w", err)
 	}
 	return nil

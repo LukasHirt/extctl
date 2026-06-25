@@ -87,7 +87,7 @@ func LoadState(runsDir, date, id string) (*State, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open build state %s: %w", path, err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 	var s State
 	if err := json.NewDecoder(f).Decode(&s); err != nil {
 		return nil, fmt.Errorf("decode build state %s: %w", path, err)
@@ -139,16 +139,16 @@ func SaveState(runsDir string, s *State) error {
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(s); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("encode build state: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("close temp file: %w", err)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("rename build state: %w", err)
 	}
 	return nil

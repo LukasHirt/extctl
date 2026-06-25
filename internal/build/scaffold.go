@@ -219,7 +219,8 @@ func addSupportAppsEntry(worktreePath, id string) error {
 }
 
 // runCmd runs a command in dir, piping stdout/stderr to the parent process.
-func runCmd(dir, name string, args ...string) error {
+// Replaced in tests to avoid invoking real pnpm/git binaries.
+var runCmd = func(dir, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Stdout = io.Discard
