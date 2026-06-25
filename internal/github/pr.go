@@ -26,6 +26,10 @@ type PROptions struct {
 	Draft    bool     // open as a draft PR
 }
 
+// execCommand is the exec.Command function used to invoke the gh CLI.
+// Replaced in tests to avoid calling the real binary.
+var execCommand = exec.Command
+
 // Create opens a pull request via the gh CLI.
 // Requires GH_TOKEN or GITHUB_TOKEN in the environment (or gh auth login).
 // The `gh` CLI must be installed and authenticated.
@@ -44,7 +48,7 @@ func Create(opts PROptions) (*PR, error) {
 		args = append(args, "--draft")
 	}
 
-	cmd := exec.Command("gh", args...)
+	cmd := execCommand("gh", args...)
 	out, err := cmd.Output()
 	if err != nil {
 		stderr := ""
@@ -74,7 +78,7 @@ func Create(opts PROptions) (*PR, error) {
 
 // IsMerged reports whether the given PR number has been merged.
 func IsMerged(repoSlug string, number int) (bool, error) {
-	cmd := exec.Command("gh", "pr", "view",
+	cmd := execCommand("gh", "pr", "view",
 		fmt.Sprintf("%d", number),
 		"--repo", repoSlug,
 		"--json", "merged",
@@ -98,7 +102,7 @@ func IsMerged(repoSlug string, number int) (bool, error) {
 
 // AddComment posts a comment on a pull request.
 func AddComment(repoSlug string, number int, body string) error {
-	cmd := exec.Command("gh", "pr", "comment",
+	cmd := execCommand("gh", "pr", "comment",
 		fmt.Sprintf("%d", number),
 		"--repo", repoSlug,
 		"--body", body,
@@ -111,7 +115,7 @@ func AddComment(repoSlug string, number int, body string) error {
 
 // SetReady marks a draft PR as ready for review.
 func SetReady(repoSlug string, number int) error {
-	cmd := exec.Command("gh", "pr", "ready",
+	cmd := execCommand("gh", "pr", "ready",
 		fmt.Sprintf("%d", number),
 		"--repo", repoSlug,
 	)

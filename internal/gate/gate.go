@@ -29,6 +29,14 @@ type Result struct {
 	Stages Stages  `json:"stages"`
 }
 
+// execCommand is the exec.Command function used to invoke the gate script and docker.
+// Replaced in tests to avoid calling real processes.
+var execCommand = exec.Command
+
+// ocisHealthURL is the URL polled when waiting for oCIS to start.
+// Replaced in tests to point to an httptest server.
+var ocisHealthURL = "https://host.docker.internal:9200"
+
 // Run executes gate/run-gate.sh and returns the parsed result.
 // scriptPath is the absolute path to gate/run-gate.sh.
 // outputDir is where gate.json and gate.log will be written.
@@ -43,7 +51,7 @@ func Run(scriptPath, worktreePath, extID, outputDir string, specBulletCount int,
 	}
 
 	args := []string{worktreePath, extID, outputDir, fmt.Sprintf("%d", specBulletCount), mainCheckout}
-	cmd := exec.Command(scriptPath, args...)
+	cmd := execCommand(scriptPath, args...)
 
 	// Create gate.log so the script can open it with O_APPEND via "tee -a $LOG".
 	// Do NOT redirect cmd.Stdout/Stderr here — the script owns all writes to its
@@ -76,7 +84,7 @@ func Run(scriptPath, worktreePath, extID, outputDir string, specBulletCount int,
 // logID is the candidate ID used to prefix log output (e.g. "web-app-ai-doc-summary").
 func EnsureOCIS(mainCheckout, logID string) error {
 	prefix := logPrefix(logID)
-	checkCmd := exec.Command("docker", "compose", "ps", "-q", "ocis")
+	checkCmd := execCommand("docker", "compose", "ps", "-q", "ocis")
 	checkCmd.Dir = mainCheckout
 	out, _ := checkCmd.Output()
 	if strings.TrimSpace(string(out)) != "" {
@@ -84,7 +92,7 @@ func EnsureOCIS(mainCheckout, logID string) error {
 	}
 
 	fmt.Printf("%sgate: oCIS not running — starting via docker compose up -d…\n", prefix)
-	upCmd := exec.Command("docker", "compose", "up", "-d")
+	upCmd := execCommand("docker", "compose", "up", "-d")
 	upCmd.Dir = mainCheckout
 	upCmd.Stdout = os.Stdout
 	upCmd.Stderr = os.Stderr
@@ -92,7 +100,6 @@ func EnsureOCIS(mainCheckout, logID string) error {
 		return fmt.Errorf("docker compose up -d: %w", err)
 	}
 
-	const ocisURL = "https://host.docker.internal:9200"
 	client := &http.Client{
 		Timeout: 2 * time.Second,
 		Transport: &http.Transport{
@@ -100,7 +107,7 @@ func EnsureOCIS(mainCheckout, logID string) error {
 		},
 	}
 	for i := 0; i < 30; i++ {
-		resp, err := client.Get(ocisURL)
+		resp, err := client.Get(ocisHealthURL)
 		if err == nil {
 			resp.Body.Close()
 			fmt.Printf("%sgate: oCIS is up\n", prefix)
@@ -108,7 +115,7 @@ func EnsureOCIS(mainCheckout, logID string) error {
 		}
 		time.Sleep(2 * time.Second)
 	}
-	return fmt.Errorf("oCIS did not become reachable within 60s at %s", ocisURL)
+	return fmt.Errorf("oCIS did not become reachable within 60s at %s", ocisHealthURL)
 }
 
 // ReadLog returns the contents of gate.log from the output directory,
