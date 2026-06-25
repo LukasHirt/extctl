@@ -683,7 +683,7 @@ var approveStagesCmd = &cobra.Command{
 		pr, err := githubpkg.Create(githubpkg.PROptions{
 			RepoSlug: cfg.TargetRepo.Remote,
 			Branch:   bs.Branch,
-			Title:    candidate.Title,
+			Title:    fmt.Sprintf("feat(%s): add %s", candidate.ID, candidate.Title),
 			Body:     prBody,
 			Labels:   []string{},
 			Draft:    false,
