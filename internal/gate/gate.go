@@ -109,7 +109,7 @@ func EnsureOCIS(mainCheckout, logID string) error {
 	for i := 0; i < 30; i++ {
 		resp, err := client.Get(ocisHealthURL)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			fmt.Printf("%sgate: oCIS is up\n", prefix)
 			return nil
 		}

@@ -30,7 +30,7 @@ func TestClient_CreateIssue(t *testing.T) {
 				}
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusCreated)
-				json.NewEncoder(w).Encode(map[string]string{
+				_ = json.NewEncoder(w).Encode(map[string]string{
 					"id":  "10001",
 					"key": "OSPO-1",
 					"self": ts_url(r) + "/rest/api/2/issue/10001",
@@ -59,7 +59,7 @@ func TestClient_CreateIssue(t *testing.T) {
 				bodyBytes, _ = io.ReadAll(r.Body)
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusCreated)
-				json.NewEncoder(w).Encode(map[string]string{"id": "1", "key": "P-1", "self": ""})
+				_ = json.NewEncoder(w).Encode(map[string]string{"id": "1", "key": "P-1", "self": ""})
 			},
 		})
 		c := NewClient(ts.URL, "test@test.com", "token")
@@ -68,7 +68,7 @@ func TestClient_CreateIssue(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		var body map[string]any
-		json.Unmarshal(bodyBytes, &body)
+		_ = json.Unmarshal(bodyBytes, &body)
 		fields, _ := body["fields"].(map[string]any)
 		issueType, _ := fields["issuetype"].(map[string]any)
 		if issueType["name"] != "Task" {
@@ -83,7 +83,7 @@ func TestClient_CreateIssue(t *testing.T) {
 				authHeader = r.Header.Get("Authorization")
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusCreated)
-				json.NewEncoder(w).Encode(map[string]string{"id": "1", "key": "P-1", "self": ""})
+				_ = json.NewEncoder(w).Encode(map[string]string{"id": "1", "key": "P-1", "self": ""})
 			},
 		})
 		c := NewClient(ts.URL, "user@test.com", "mytoken")
@@ -100,7 +100,7 @@ func TestClient_CreateIssue(t *testing.T) {
 				ct = r.Header.Get("Content-Type")
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusCreated)
-				json.NewEncoder(w).Encode(map[string]string{"id": "1", "key": "P-1", "self": ""})
+				_ = json.NewEncoder(w).Encode(map[string]string{"id": "1", "key": "P-1", "self": ""})
 			},
 		})
 		c := NewClient(ts.URL, "u", "t")
@@ -153,7 +153,7 @@ func TestClient_Transition(t *testing.T) {
 				callCount++
 				if r.Method == http.MethodGet {
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(map[string]any{
+					_ = json.NewEncoder(w).Encode(map[string]any{
 						"transitions": []map[string]string{
 							{"id": "10", "name": "Doing"},
 							{"id": "11", "name": "Done"},
@@ -174,7 +174,7 @@ func TestClient_Transition(t *testing.T) {
 			t.Errorf("expected 2 calls (GET + POST), got %d", callCount)
 		}
 		var body map[string]any
-		json.Unmarshal(transitionBody, &body)
+		_ = json.Unmarshal(transitionBody, &body)
 		transition, _ := body["transition"].(map[string]any)
 		if transition["id"] != "10" {
 			t.Errorf("transition.id = %v, want 10", transition["id"])
@@ -186,7 +186,7 @@ func TestClient_Transition(t *testing.T) {
 			"/rest/api/2/issue/OSPO-1/transitions": func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodGet {
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(map[string]any{
+					_ = json.NewEncoder(w).Encode(map[string]any{
 						"transitions": []map[string]string{{"id": "10", "name": "Other"}},
 					})
 				}
@@ -220,7 +220,7 @@ func TestClient_SearchIssues(t *testing.T) {
 		ts := newTestServer(t, map[string]http.HandlerFunc{
 			"/rest/api/3/search/jql": func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]any{
+				_ = json.NewEncoder(w).Encode(map[string]any{
 					"issues": []map[string]any{
 						{
 							"key": "OSPO-1",
@@ -258,7 +258,7 @@ func TestClient_SearchIssues(t *testing.T) {
 		ts := newTestServer(t, map[string]http.HandlerFunc{
 			"/rest/api/3/search/jql": func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]any{"issues": []any{}})
+				_ = json.NewEncoder(w).Encode(map[string]any{"issues": []any{}})
 			},
 		})
 		c := NewClient(ts.URL, "u", "t")
@@ -277,13 +277,13 @@ func TestClient_SearchIssues(t *testing.T) {
 			"/rest/api/3/search/jql": func(w http.ResponseWriter, r *http.Request) {
 				bodyBytes, _ = io.ReadAll(r.Body)
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]any{"issues": []any{}})
+				_ = json.NewEncoder(w).Encode(map[string]any{"issues": []any{}})
 			},
 		})
 		c := NewClient(ts.URL, "u", "t")
 		c.SearchIssues("jql", nil) //nolint:errcheck
 		var body map[string]any
-		json.Unmarshal(bodyBytes, &body)
+		_ = json.Unmarshal(bodyBytes, &body)
 		fields, _ := body["fields"].([]any)
 		if len(fields) == 0 || fields[0] != "status" {
 			t.Errorf("fields in body = %v, want [status]", fields)
@@ -320,7 +320,7 @@ func TestClient_AddComment(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		var body map[string]string
-		json.Unmarshal(bodyBytes, &body)
+		_ = json.Unmarshal(bodyBytes, &body)
 		if body["body"] != "comment text" {
 			t.Errorf("request body.body = %q, want %q", body["body"], "comment text")
 		}
@@ -347,7 +347,7 @@ func TestClient_GetComments(t *testing.T) {
 		ts := newTestServer(t, map[string]http.HandlerFunc{
 			"/rest/api/2/issue/OSPO-1/comment": func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]any{
+				_ = json.NewEncoder(w).Encode(map[string]any{
 					"comments": []map[string]any{
 						{
 							"author":  map[string]string{"displayName": "Alice"},
@@ -383,7 +383,7 @@ func TestClient_GetComments(t *testing.T) {
 		ts := newTestServer(t, map[string]http.HandlerFunc{
 			"/rest/api/2/issue/OSPO-1/comment": func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]any{"comments": []any{}})
+				_ = json.NewEncoder(w).Encode(map[string]any{"comments": []any{}})
 			},
 		})
 		c := NewClient(ts.URL, "u", "t")

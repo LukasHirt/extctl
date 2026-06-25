@@ -216,7 +216,7 @@ func TestLoadDotEnv(t *testing.T) {
 			// Ensure keys set by LoadDotEnv are cleaned up after test.
 			for k := range tt.wantEnv {
 				if _, exists := tt.presetEnv[k]; !exists {
-					t.Cleanup(func() { os.Unsetenv(k) })
+					t.Cleanup(func() { _ = os.Unsetenv(k) })
 				}
 			}
 

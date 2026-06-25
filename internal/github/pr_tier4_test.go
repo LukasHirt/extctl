@@ -13,7 +13,7 @@ func TestHelperProcess(t *testing.T) {
 	}
 	stdout := os.Getenv("GO_HELPER_STDOUT")
 	if stdout != "" {
-		os.Stdout.WriteString(stdout)
+		_, _ = os.Stdout.WriteString(stdout)
 	}
 	exitCode := 0
 	if os.Getenv("GO_HELPER_EXIT") == "1" {

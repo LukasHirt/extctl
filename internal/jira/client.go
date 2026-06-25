@@ -220,7 +220,7 @@ func (c *Client) do(req *http.Request, out any) error {
 	if err != nil {
 		return fmt.Errorf("http %s %s: %w", req.Method, req.URL, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

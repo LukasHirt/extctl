@@ -242,24 +242,20 @@ var approvePlanCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		candidateID := args[0]
 
-		loc, err := time.LoadLocation(cfg.Timezone)
-		if err != nil {
-			return fmt.Errorf("load timezone: %w", err)
-		}
-		date := time.Now().In(loc).Format("2006-01-02")
-
 		// Look up the candidate from slates.
 		slates, err := state.LoadAll(cfg.RunsDir)
 		if err != nil {
 			return fmt.Errorf("load slates: %w", err)
 		}
-		var candidate *state.Candidate
+		var (
+			candidate *state.Candidate
+			date      string
+		)
 		for i := len(slates) - 1; i >= 0; i-- {
 			for j := range slates[i].Candidates {
 				c := &slates[i].Candidates[j]
 				if c.ID == candidateID || c.JiraKey == candidateID {
 					candidate = c
-					date = slates[i].Date
 					break
 				}
 			}
@@ -343,24 +339,20 @@ var approveStagesCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		candidateID := args[0]
 
-		loc, err := time.LoadLocation(cfg.Timezone)
-		if err != nil {
-			return fmt.Errorf("load timezone: %w", err)
-		}
-		date := time.Now().In(loc).Format("2006-01-02")
-
 		// Look up the candidate from slates.
 		slates, err := state.LoadAll(cfg.RunsDir)
 		if err != nil {
 			return fmt.Errorf("load slates: %w", err)
 		}
-		var candidate *state.Candidate
+		var (
+			candidate *state.Candidate
+			date      string
+		)
 		for i := len(slates) - 1; i >= 0; i-- {
 			for j := range slates[i].Candidates {
 				c := &slates[i].Candidates[j]
 				if c.ID == candidateID || c.JiraKey == candidateID {
 					candidate = c
-					date = slates[i].Date
 					break
 				}
 			}
