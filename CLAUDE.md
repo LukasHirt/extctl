@@ -103,6 +103,17 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
   passed (the gate's optional 5th argument), and is serialized across
   concurrently-built candidates via a lock so their Playwright sessions don't
   collide on the shared admin user.
+- `extctl release` — scans the web-extensions checkout for extensions that have
+  been merged to the default branch (`packages/web-app-*` present on
+  `origin/<default_branch>`) but never released, and creates + pushes a signed
+  git tag `<app-id>-v<version>` (version read from each `package.json`) for each.
+  The GitHub Action in web-extensions picks up the pushed tag and builds the
+  release — extctl only pushes the tag. An extension counts as released once any
+  tag with prefix `<app-id>-v` exists, so the command is idempotent. Only the
+  newly created tags are pushed. `extctl release --dry-run` lists what would be
+  tagged without creating or pushing anything. Signed tags require a signing key
+  in the target repo's git config (`user.signingkey`). Logic lives in
+  `internal/release/release.go`; git primitives in `internal/git/tags.go`.
 
 ## What's next (in priority order)
 
