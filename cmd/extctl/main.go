@@ -17,6 +17,7 @@ import (
 	githubpkg "github.com/LukasHirt/extctl/internal/github"
 	"github.com/LukasHirt/extctl/internal/jira"
 	"github.com/LukasHirt/extctl/internal/poll"
+	"github.com/LukasHirt/extctl/internal/release"
 	"github.com/LukasHirt/extctl/internal/state"
 )
 
@@ -736,6 +737,26 @@ func countSpecBullets(specMD string) int {
 	return n
 }
 
+// --- release command ---
+
+var releaseDryRun bool
+
+var releaseCmd = &cobra.Command{
+	Use:   "release",
+	Short: "Tag merged-but-unreleased extensions for GitHub release",
+	Long: `Scan the web-extensions checkout for extensions that have been merged to
+the default branch but never released, and create + push a signed git tag
+(<app-id>-v<version>) for each. The GitHub Action in web-extensions picks up
+the pushed tag and builds the release.
+
+An extension is considered released once any tag with prefix <app-id>-v exists,
+so this command is idempotent. Signed tags require a signing key configured in
+the target repo's git (user.signingkey).`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return release.Run(cfg, releaseDryRun, os.Stdout)
+	},
+}
+
 // --- version command ---
 
 var version = "dev"
@@ -772,8 +793,11 @@ func init() {
 	pollCmd.Flags().StringVar(&pollDate, "date", "",
 		"date to poll for in YYYY-MM-DD format (default: today)")
 
+	releaseCmd.Flags().BoolVar(&releaseDryRun, "dry-run", false,
+		"list merged-but-unreleased extensions without creating or pushing tags")
+
 	slateCmd.AddCommand(slateStatusCmd, slateCarryoversCmd)
-	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, approvePlanCmd, approveStagesCmd, versionCmd)
+	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, approvePlanCmd, approveStagesCmd, releaseCmd, versionCmd)
 }
 
 func main() {
