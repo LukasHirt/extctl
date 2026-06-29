@@ -1,0 +1,34 @@
+version: "3"
+
+tasks:
+  build:
+    desc: Compile the extctl binary
+    cmds:
+      - go build ./cmd/extctl
+
+  install:
+    desc: Install extctl to GOPATH/bin
+    cmds:
+      - go install ./cmd/extctl
+
+  test:
+    desc: Run tests with race detector
+    cmds:
+      - go test -race ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  tidy:
+    desc: Tidy go.mod and go.sum
+    cmds:
+      - go mod tidy
+
+  ci:
+    desc: Run build, test, and lint (mirrors CI)
+    cmds:
+      - task: build
+      - task: test
+      - task: lint
