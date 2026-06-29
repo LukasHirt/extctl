@@ -51,18 +51,25 @@ func TestPushTags(t *testing.T) {
 	mustGit(t, repo, "remote", "add", "origin", remote)
 	mustGit(t, repo, "push", "origin", defaultBranch(t, repo))
 
-	// Lightweight (unsigned) tag so the test needs no signing key, even when the
-	// host git config defaults to signed/annotated tags.
-	mustGit(t, repo, "-c", "tag.gpgsign=false", "tag", "alpha-v0.1.0")
-	if err := PushTags(repo, "alpha-v0.1.0"); err != nil {
+	// Lightweight (unsigned) tags so the test needs no signing key, even when the
+	// host git config defaults to signed/annotated tags. Push more than three at
+	// once to cover the case that motivated per-tag pushes (GitHub drops the push
+	// event when >3 tags arrive in a single push).
+	want := []string{"alpha-v0.1.0", "beta-v0.1.0", "gamma-v0.1.0", "delta-v0.1.0"}
+	for _, tag := range want {
+		mustGit(t, repo, "-c", "tag.gpgsign=false", "tag", tag)
+	}
+	if err := PushTags(repo, want...); err != nil {
 		t.Fatalf("PushTags: %v", err)
 	}
 
-	out, err := Output(remote, "tag", "-l", "alpha-v0.1.0")
-	if err != nil {
-		t.Fatalf("list remote tags: %v", err)
-	}
-	if strings.TrimSpace(string(out)) != "alpha-v0.1.0" {
-		t.Errorf("tag not pushed to remote, got %q", strings.TrimSpace(string(out)))
+	for _, tag := range want {
+		out, err := Output(remote, "tag", "-l", tag)
+		if err != nil {
+			t.Fatalf("list remote tags: %v", err)
+		}
+		if strings.TrimSpace(string(out)) != tag {
+			t.Errorf("tag %s not pushed to remote, got %q", tag, strings.TrimSpace(string(out)))
+		}
 	}
 }

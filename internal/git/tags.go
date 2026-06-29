@@ -31,11 +31,19 @@ func CreateSignedTag(repoPath, tag, message string) error {
 	return run(repoPath, "tag", "-s", tag, "-m", message)
 }
 
-// PushTags pushes the named tags to origin. It is a no-op when no tags are given
-// so callers can pass the result of a scan without guarding empty slices.
+// PushTags pushes the named tags to origin, one tag per push. It is a no-op when
+// no tags are given so callers can pass the result of a scan without guarding
+// empty slices.
+//
+// Tags are pushed individually on purpose: GitHub does not deliver the `push`
+// event (and therefore does not trigger tag-pattern workflows like release.yml)
+// when more than three tags arrive in a single push. One push per tag keeps each
+// release tag triggering its own workflow run.
 func PushTags(repoPath string, tags ...string) error {
-	if len(tags) == 0 {
-		return nil
+	for _, tag := range tags {
+		if err := run(repoPath, "push", "origin", tag); err != nil {
+			return fmt.Errorf("push tag %s: %w", tag, err)
+		}
 	}
-	return run(repoPath, append([]string{"push", "origin"}, tags...)...)
+	return nil
 }
