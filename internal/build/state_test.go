@@ -1,9 +1,11 @@
 package build
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestSaveStateAndLoadState(t *testing.T) {
@@ -176,4 +178,117 @@ func TestSaveState_NoTmpFileLeft(t *testing.T) {
 			t.Errorf("unexpected file left: %s", e.Name())
 		}
 	}
+}
+
+func writeRawState(t *testing.T, runsDir, date, id string, s State) {
+	t.Helper()
+	dir := filepath.Join(runsDir, date, id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), data, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+}
+
+func TestLoadAllStates(t *testing.T) {
+	t.Run("empty dir", func(t *testing.T) {
+		dir := t.TempDir()
+		states, err := LoadAllStates(dir, time.Time{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(states) != 0 {
+			t.Errorf("want 0 states, got %d", len(states))
+		}
+	})
+
+	t.Run("nonexistent dir returns nil", func(t *testing.T) {
+		states, err := LoadAllStates("/nonexistent/path/xyz-extctl-test", time.Time{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if states != nil {
+			t.Errorf("want nil, got %v", states)
+		}
+	})
+
+	t.Run("non-date subdirectory skipped", func(t *testing.T) {
+		dir := t.TempDir()
+		subDir := filepath.Join(dir, "not-a-date", "some-id")
+		if err := os.MkdirAll(subDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.WriteFile(filepath.Join(subDir, "state.json"), []byte(`{"id":"x"}`), 0o644)
+		states, err := LoadAllStates(dir, time.Time{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(states) != 0 {
+			t.Errorf("want 0 states (non-date dir skipped), got %d", len(states))
+		}
+	})
+
+	t.Run("corrupt state.json skipped", func(t *testing.T) {
+		dir := t.TempDir()
+		stateDir := filepath.Join(dir, "2026-06-01", "my-ext")
+		if err := os.MkdirAll(stateDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.WriteFile(filepath.Join(stateDir, "state.json"), []byte(`{invalid json`), 0o644)
+		states, err := LoadAllStates(dir, time.Time{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(states) != 0 {
+			t.Errorf("want 0 states (corrupt skipped), got %d", len(states))
+		}
+	})
+
+	t.Run("states across multiple date dirs", func(t *testing.T) {
+		dir := t.TempDir()
+		writeRawState(t, dir, "2026-06-01", "ext-a", State{ID: "ext-a", Date: "2026-06-01"})
+		writeRawState(t, dir, "2026-06-10", "ext-b", State{ID: "ext-b", Date: "2026-06-10"})
+		states, err := LoadAllStates(dir, time.Time{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(states) != 2 {
+			t.Errorf("want 2 states, got %d", len(states))
+		}
+	})
+
+	t.Run("since filter excludes older dates", func(t *testing.T) {
+		dir := t.TempDir()
+		writeRawState(t, dir, "2026-05-01", "ext-old", State{ID: "ext-old", Date: "2026-05-01"})
+		writeRawState(t, dir, "2026-06-15", "ext-new", State{ID: "ext-new", Date: "2026-06-15"})
+		since, _ := time.Parse("2006-01-02", "2026-06-01")
+		states, err := LoadAllStates(dir, since)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(states) != 1 {
+			t.Errorf("want 1 state, got %d", len(states))
+		}
+		if len(states) > 0 && states[0].ID != "ext-new" {
+			t.Errorf("want ext-new, got %s", states[0].ID)
+		}
+	})
+
+	t.Run("since boundary is inclusive", func(t *testing.T) {
+		dir := t.TempDir()
+		writeRawState(t, dir, "2026-06-01", "ext-boundary", State{ID: "ext-boundary"})
+		since, _ := time.Parse("2006-01-02", "2026-06-01")
+		states, err := LoadAllStates(dir, since)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(states) != 1 {
+			t.Errorf("want 1 state (boundary inclusive), got %d", len(states))
+		}
+	})
 }

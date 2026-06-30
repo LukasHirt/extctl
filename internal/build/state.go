@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Phase tracks where a build is in its lifecycle.
@@ -121,6 +122,55 @@ func FindState(runsDir, id string) (*State, error) {
 		}
 	}
 	return nil, nil
+}
+
+// LoadAllStates scans all date directories under runsDir and returns every build
+// state found. If since is non-zero, only states from date directories on or
+// after since are returned. Corrupt state.json files are silently skipped.
+func LoadAllStates(runsDir string, since time.Time) ([]*State, error) {
+	dateEntries, err := os.ReadDir(runsDir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read runs dir %s: %w", runsDir, err)
+	}
+
+	sinceStr := ""
+	if !since.IsZero() {
+		sinceStr = since.Format("2006-01-02")
+	}
+
+	var out []*State
+	for _, dateEntry := range dateEntries {
+		if !dateEntry.IsDir() {
+			continue
+		}
+		date := dateEntry.Name()
+		if len(date) != 10 || date[4] != '-' || date[7] != '-' {
+			continue
+		}
+		if sinceStr != "" && date < sinceStr {
+			continue
+		}
+		candEntries, err := os.ReadDir(filepath.Join(runsDir, date))
+		if err != nil {
+			return nil, fmt.Errorf("read date dir %s: %w", date, err)
+		}
+		for _, candEntry := range candEntries {
+			if !candEntry.IsDir() {
+				continue
+			}
+			s, err := LoadState(runsDir, date, candEntry.Name())
+			if err != nil {
+				continue // skip corrupt files
+			}
+			if s != nil {
+				out = append(out, s)
+			}
+		}
+	}
+	return out, nil
 }
 
 // SaveState atomically writes the build state to runs/<date>/<id>/state.json.
