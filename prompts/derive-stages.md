@@ -45,10 +45,12 @@ Rules:
 
 > **Note:** The scaffold is created automatically by extctl before your first
 > stage runs. `packages/web-app-{{EXT_ID}}/` already exists with `package.json`,
-> `vite.config.ts`, `tsconfig.json`, `playwright.config.ts`, `l10n/`,
-> `tests/e2e/acceptance.spec.ts`, `src/index.ts`, and `src/composables/useLLM.ts`
-> in place. Registration entries in `docker-compose.yml` and both `ocis.apps.yaml`
-> files are also done. Your first stage is **core logic**.
+> `vite.config.ts`, `tsconfig.json`, `playwright.config.ts`,
+> `l10n/translations.json`, `l10n/.tx/config`,
+> `tests/e2e/acceptance.spec.ts`, `src/index.ts`, `src/composables/useLLM.ts`,
+> and `src/public/manifest.json` in place. Registration entries in
+> `docker-compose.yml`, `dev/docker/ocis.apps.yaml`, and
+> `support/actions/ocis.apps.yaml` are also done. Your first stage is **core logic**.
 
 Think in terms of natural build layers. A good stage sequence looks like:
 

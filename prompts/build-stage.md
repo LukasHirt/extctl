@@ -141,8 +141,6 @@ Once all checks pass, commit your work using a conventional commit message:
 
 ```
 git add packages/web-app-{{EXT_ID}}/
-# On the scaffold stage only, also stage the three registration files if you edited them:
-# git add docker-compose.yml dev/docker/ocis.apps.yaml support/actions/ocis.apps.yaml
 git commit -s -m "<type>(web-app-{{EXT_ID}}): {{STAGE_DESC}}"
 ```
 

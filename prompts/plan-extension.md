@@ -49,8 +49,8 @@ constraint that overrides or refines the original spec.
      scaffold is copied — but look for a canonical version elsewhere in
      the repo (search for `useLLM` with Grep) to understand its API:
      what it accepts, what it returns, how callers use it.
-   - The scaffold directory (if present) under `scaffold/` or a skeleton
-     package to understand which files extctl will pre-create.
+   - The scaffold directory under `scaffold/` to understand which files
+     extctl will pre-create for the extension package.
    - Any risks: deprecated APIs, missing peer dependencies, naming
      conflicts with existing packages.
 
