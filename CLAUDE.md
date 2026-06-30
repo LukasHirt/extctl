@@ -118,6 +118,14 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
   tagged without creating or pushing anything. Signed tags require a signing key
   in the target repo's git config (`user.signingkey`). Logic lives in
   `internal/release/release.go`; git primitives in `internal/git/tags.go`.
+- `extctl stats [--days=N]` — three-section dashboard (default: last 30 days).
+  **TODAY**: today's slate breakdown (total candidates, fresh vs carryover,
+  per-status counts, in-flight builds with phase/stage/cost).
+  **PIPELINE**: pick rate, build success rate (done+gated / picked), avg repair
+  attempts, avg Claude turns — all scoped to the requested date window.
+  **COST**: total spend, avg and highest per-build cost, budget utilization
+  (`BudgetUSDPerBuild × builds` in window). Reads `runs/*/slate.json` via
+  `state.LoadAll` and `runs/*/*/state.json` via `build.LoadAllStates`.
 
 ## What's next (in priority order)
 
