@@ -105,9 +105,6 @@ extctl poll
 # Preview what poll would do without side-effects
 extctl poll --dry-run
 
-# Manually trigger planning for a specific candidate
-extctl build <candidate-id>
-
 # After poll detects a pick and writes plan.md:
 cat runs/<date>/<id>/plan.md       # review the plan
 extctl approve-plan <candidate-id>  # derive stages and proceed
@@ -119,18 +116,6 @@ extctl approve-stages <candidate-id>  # build stage by stage and open PR
 # Re-run the gate on an existing worktree (for debugging)
 extctl gate <candidate-id>
 ```
-
-### Scaffold
-
-```bash
-# Populate scaffold/ from the owncloud/web-app-skeleton repo
-extctl scaffold fetch
-```
-
-The scaffold is used as the starting template for every extension build.
-Custom files (`src/composables/useLLM.ts`, `tests/e2e/`) are preserved
-across fetches. Configure `scaffold.exclude` in `extctl.yaml` to adjust
-which skeleton files are copied.
 
 ## License
 

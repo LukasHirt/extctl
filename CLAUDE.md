@@ -89,7 +89,11 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
   `derive-stages.md` to write `runs/<date>/<id>/stages.md`, sets state to
   `stages_review`.
 - `extctl approve-stages <id>` — reads the approved `stages.md` and builds
-  each stage in sequence: Claude runs `build-stage.md` per stage, the gate
+  each stage in sequence. Before the first Claude invocation, extctl
+  automatically copies `scaffold/` into `packages/web-app-<id>/` in the
+  worktree and adds registration entries to `docker-compose.yml`,
+  `dev/docker/ocis.apps.yaml`, and `support/actions/ocis.apps.yaml` — no
+  user action required. Claude then runs `build-stage.md` per stage, the gate
   runs after each stage, and on full pass the branch is pushed and a GitHub PR
   is opened. State progresses through `building` → `gated` → `publishing` →
   `done`.
