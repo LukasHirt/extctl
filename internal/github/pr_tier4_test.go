@@ -141,7 +141,7 @@ func TestCreate_Error(t *testing.T) {
 }
 
 func TestIsMerged_True(t *testing.T) {
-	execCommand = fakeExec(t, `{"merged":true}`)
+	execCommand = fakeExec(t, `{"mergedAt":"2024-01-15T10:00:00Z"}`)
 	merged, err := IsMerged("org/repo", 42)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -152,7 +152,7 @@ func TestIsMerged_True(t *testing.T) {
 }
 
 func TestIsMerged_False(t *testing.T) {
-	execCommand = fakeExec(t, `{"merged":false}`)
+	execCommand = fakeExec(t, `{"mergedAt":null}`)
 	merged, err := IsMerged("org/repo", 42)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -81,7 +81,7 @@ func IsMerged(repoSlug string, number int) (bool, error) {
 	cmd := execCommand("gh", "pr", "view",
 		fmt.Sprintf("%d", number),
 		"--repo", repoSlug,
-		"--json", "merged",
+		"--json", "mergedAt",
 	)
 	out, err := cmd.Output()
 	if err != nil {
@@ -92,12 +92,12 @@ func IsMerged(repoSlug string, number int) (bool, error) {
 		return false, fmt.Errorf("gh pr view: %w\nstderr: %s", err, strings.TrimSpace(stderr))
 	}
 	var result struct {
-		Merged bool `json:"merged"`
+		MergedAt string `json:"mergedAt"`
 	}
 	if err := json.Unmarshal(out, &result); err != nil {
 		return false, fmt.Errorf("parse gh pr view output: %w", err)
 	}
-	return result.Merged, nil
+	return result.MergedAt != "", nil
 }
 
 // AddComment posts a comment on a pull request.
