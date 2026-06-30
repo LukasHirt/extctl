@@ -117,6 +117,16 @@ extctl approve-stages <candidate-id>  # build stage by stage and open PR
 extctl gate <candidate-id>
 ```
 
+### Pipeline stats
+
+```bash
+# Show today's slate, pipeline health, and cost for the last 30 days
+extctl stats
+
+# Narrow the history window
+extctl stats --days=7
+```
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).

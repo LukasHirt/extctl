@@ -19,6 +19,7 @@ import (
 	"github.com/LukasHirt/extctl/internal/poll"
 	"github.com/LukasHirt/extctl/internal/release"
 	"github.com/LukasHirt/extctl/internal/state"
+	"github.com/LukasHirt/extctl/internal/stats"
 )
 
 var (
@@ -737,6 +738,23 @@ func countSpecBullets(specMD string) int {
 	return n
 }
 
+// --- stats command ---
+
+var statsDays int
+
+var statsCmd = &cobra.Command{
+	Use:   "stats",
+	Short: "Show pipeline stats and cost summary",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		r, err := stats.Compute(cfg, statsDays)
+		if err != nil {
+			return err
+		}
+		stats.Print(r, os.Stdout)
+		return nil
+	},
+}
+
 // --- release command ---
 
 var releaseDryRun bool
@@ -796,8 +814,11 @@ func init() {
 	releaseCmd.Flags().BoolVar(&releaseDryRun, "dry-run", false,
 		"list merged-but-unreleased extensions without creating or pushing tags")
 
+	statsCmd.Flags().IntVar(&statsDays, "days", 30,
+		"number of days of history to include in pipeline and cost sections")
+
 	slateCmd.AddCommand(slateStatusCmd, slateCarryoversCmd)
-	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, approvePlanCmd, approveStagesCmd, releaseCmd, versionCmd)
+	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, approvePlanCmd, approveStagesCmd, releaseCmd, statsCmd, versionCmd)
 }
 
 func main() {
