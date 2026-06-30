@@ -200,6 +200,15 @@ func Run(opts Options) (*Result, error) {
 		return &Result{Date: date, Picked: allPicked}, nil
 	}
 
+	// Fetch once before launching concurrent builds. Each goroutine would
+	// otherwise call FetchOrigin on the same checkout simultaneously, causing
+	// git ref-lock failures for all but one.
+	repoPath := opts.Config.TargetRepo.Checkout
+	fmt.Printf("poll: fetching origin in %s…\n", repoPath)
+	if err := gitpkg.FetchOrigin(repoPath); err != nil {
+		return nil, fmt.Errorf("fetch origin: %w", err)
+	}
+
 	var wg sync.WaitGroup
 	var budgetMu sync.Mutex
 	for _, p := range allPicked {
@@ -337,10 +346,6 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 
 	// Create git worktree.
 	repoPath := opts.Config.TargetRepo.Checkout
-	logf("build: fetching origin in %s…\n", repoPath)
-	if err := gitpkg.FetchOrigin(repoPath); err != nil {
-		return fmt.Errorf("git fetch origin: %w", err)
-	}
 	baseBranch := "origin/" + opts.Config.DefaultBranch
 	logf("build: creating worktree %s on branch %s…\n", worktreePath, branch)
 	if err := gitpkg.CreateWorktree(repoPath, worktreePath, branch, baseBranch); err != nil {
