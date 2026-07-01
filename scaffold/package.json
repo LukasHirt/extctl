@@ -9,8 +9,6 @@
     "build": "pnpm vite build",
     "build:w": "pnpm vite build --watch --mode development",
     "check:types": "vue-tsc --noEmit",
-    "lint": "eslint src --max-warnings 0",
-    "test": "NODE_OPTIONS=--unhandled-rejections=throw vitest run",
     "test:unit": "NODE_OPTIONS=--unhandled-rejections=throw vitest run",
     "test:e2e": "pnpm playwright test"
   },
