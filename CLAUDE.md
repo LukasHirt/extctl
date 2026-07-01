@@ -166,10 +166,16 @@ allowlists by prompt:
 - Phase A (`gen-specs.md`): `Read,Grep,Glob`
 - Planning (`plan-extension.md`): `Read,Grep,Glob,Write`
 - Stage derivation (`derive-stages.md`): `Read,Write`
-- Per-stage build (`build-stage.md`):
-  `Read,Edit,Write,Grep,Glob,Bash(pnpm install),Bash(pnpm build),
-  Bash(pnpm test *),Bash(pnpm lint *),Bash(git add *),Bash(git commit *),
-  Bash(git status),Bash(git diff *)`
+- Per-stage build (`build-stage.md`) and repair (`repair.md`, same allowlist):
+  `Read,Edit,Write,Grep,Glob,Bash(pnpm install *),Bash(pnpm build),
+  Bash(pnpm test:unit *),Bash(pnpm lint *),Bash(pnpm check:types),
+  Bash(git add *),Bash(git commit *),Bash(git status),Bash(git diff *)`
+
+  Package scripts: each `packages/web-app-*` only defines `build`, `build:w`,
+  `check:types`, `test:unit`, `test:e2e` — there is no per-package `test` or
+  `lint` script. `lint` is a workspace-root-only script (globs `packages/**`
+  and `support/**`); it must always run from the repo root, never `cd`'d into
+  a package directory.
 
 No `git push`, no `gh`, no network tools — those are always orchestrator
 actions. The same applies to the gate's e2e stage: Docker and Playwright

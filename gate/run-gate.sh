@@ -184,7 +184,7 @@ stage_ok build
 log ""
 log "--- Stage 3: static ---"
 
-if ! (cd "$EXT_DIR" && pnpm lint 2>&1 | tee -a "$LOG"); then
+if ! (cd "$WORKTREE" && pnpm lint 2>&1 | tee -a "$LOG"); then
   stage_fail lint "pnpm lint failed"
   write_json false; exit 1
 fi
@@ -202,8 +202,8 @@ stage_ok lint
 log ""
 log "--- Stage 4: unit ---"
 
-if ! (cd "$EXT_DIR" && pnpm test 2>&1 | tee -a "$LOG"); then
-  stage_fail unit "pnpm test failed"
+if ! (cd "$EXT_DIR" && pnpm test:unit 2>&1 | tee -a "$LOG"); then
+  stage_fail unit "pnpm test:unit failed"
   write_json false; exit 1
 fi
 
@@ -262,7 +262,10 @@ if [ -n "$MAIN_CHECKOUT" ]; then
 
   # CI=true switches Playwright to its non-interactive reporter (no cursor-up/erase lines).
   # The sed strips any remaining ANSI escape sequences so gate.log stays plain text.
-  if ! (cd "$EXT_DIR" && CI=true pnpm playwright test --retries=0 2>&1 \
+  # --trace retain-on-failure: with --retries=0, 'on-first-retry' (the config default)
+  # never fires, so force a trace on the one attempt that does run. Forced here rather
+  # than in the extension's own playwright.config.ts so it never ships in a merged PR.
+  if ! (cd "$EXT_DIR" && CI=true pnpm playwright test --retries=0 --trace retain-on-failure 2>&1 \
       | sed $'s/\x1b\\[[0-9;]*[a-zA-Z]//g' \
       | tee -a "$LOG"); then
     e2e_result="fail"

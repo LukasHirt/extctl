@@ -12,6 +12,24 @@ Your task is to fix the failing stage(s) and recommit.
 
 ---
 
+## Diagnosing e2e failures
+
+The gate log above only prints a truncated console summary of each Playwright
+failure. Before touching any e2e test, read the richer artifacts Playwright
+already wrote to disk for every failed test:
+
+- `packages/web-app-{{EXT_ID}}/test-results/*/error-context.md` — an
+  accessibility-tree snapshot of the exact page state at the moment the test
+  failed (what was actually rendered, what elements existed, their names/roles).
+  This is the ground truth for "why didn't my locator match" — read it before
+  guessing at a selector fix.
+- `packages/web-app-{{EXT_ID}}/test-results/*/*.png`, if present — a screenshot
+  of the failure state. Use the `Read` tool to view it directly.
+
+Each failing test gets its own subdirectory under `test-results/` (one per
+browser project — chrome/firefox/webkit); check all of them, since a test can
+pass in one browser and fail in another for different reasons.
+
 ## Repair rules
 
 1. Fix only the failing stage(s) shown in the log above.
@@ -38,10 +56,14 @@ Run the following and ensure all pass before committing:
 cd packages/web-app-{{EXT_ID}}
 pnpm install --frozen-lockfile
 pnpm build
-pnpm lint
 pnpm check:types
-pnpm test
+pnpm test:unit
+cd ../..
+pnpm lint
 ```
+
+`lint` is a workspace-root script — it must run from the repo root (it globs
+`packages/**` and `support/**`), not from inside the extension's directory.
 
 Then commit:
 

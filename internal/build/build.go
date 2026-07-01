@@ -41,9 +41,9 @@ type RunResult struct {
 // Note the space before * in Bash(git diff *) to avoid matching git diff-index.
 var buildTools = []string{
 	"Read", "Edit", "Write", "Grep", "Glob",
-	"Bash(pnpm install)", "Bash(pnpm build)", "Bash(pnpm test *)",
-	"Bash(pnpm lint *)", "Bash(git add *)", "Bash(git commit *)",
-	"Bash(git status)", "Bash(git diff *)",
+	"Bash(pnpm install *)", "Bash(pnpm build)", "Bash(pnpm test:unit *)",
+	"Bash(pnpm lint *)", "Bash(pnpm check:types)", "Bash(git add *)",
+	"Bash(git commit *)", "Bash(git status)", "Bash(git diff *)",
 }
 
 // Repair runs a single repair attempt on gate failure using the same Claude session.

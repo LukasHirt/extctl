@@ -130,12 +130,17 @@ for real examples.
 
 ## After implementation
 
-Run the following checks in order and fix any errors before committing:
+Run the following checks in order and fix any errors before committing. Steps
+1-4 run from inside `packages/web-app-{{EXT_ID}}/`; step 5 runs from the repo
+root.
 
 1. `pnpm install` — only if you added or changed dependencies
 2. `pnpm build` — must succeed with no errors
-3. `pnpm lint packages/web-app-{{EXT_ID}}/...` — fix all lint errors
-4. `pnpm test packages/web-app-{{EXT_ID}}/...` — all tests must pass
+3. `pnpm check:types` — fix all type errors
+4. `pnpm test:unit` — all unit tests must pass
+5. From the repo root: `pnpm lint` — fix all lint errors (this is a
+   workspace-root script that globs `packages/**` and `support/**`; it has no
+   per-package equivalent)
 
 Once all checks pass, commit your work using a conventional commit message:
 
