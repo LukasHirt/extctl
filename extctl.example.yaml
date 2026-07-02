@@ -35,6 +35,16 @@ decay:
   max_appearances: 3 # 1 initial + 2 carryovers
   action: backlog # backlog | decline | ask
 
+media:
+  # Saves a demo video + up to max_screenshots screenshots to
+  # runs/<date>/<id>/media/ after every successful gate, captured from the
+  # e2e stage's own Playwright run. Local artifacts only — nothing is
+  # uploaded or linked anywhere. Requires `ffmpeg` on PATH for the video;
+  # screenshots still work without it.
+  enabled: true
+  max_screenshots: 3
+  max_video_mb: 8
+
 prompts:
   gen_specs: 'prompts/gen-specs.md'
   plan: 'prompts/plan-extension.md'

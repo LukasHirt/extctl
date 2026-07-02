@@ -16,6 +16,7 @@ import (
 	gitpkg "github.com/LukasHirt/extctl/internal/git"
 	githubpkg "github.com/LukasHirt/extctl/internal/github"
 	"github.com/LukasHirt/extctl/internal/jira"
+	"github.com/LukasHirt/extctl/internal/media"
 	"github.com/LukasHirt/extctl/internal/poll"
 	"github.com/LukasHirt/extctl/internal/release"
 	"github.com/LukasHirt/extctl/internal/state"
@@ -631,6 +632,14 @@ var approveStagesCmd = &cobra.Command{
 		// Push branch.
 		bs.Phase = build.PhasePublishing
 		_ = build.SaveState(cfg.RunsDir, bs)
+
+		if mediaResult, mediaErr := media.Generate(cfg, worktreePath, candidate.ID,
+			filepath.Join(cfg.RunsDir, date, candidate.ID, "media")); mediaErr != nil {
+			fmt.Printf("[%s] warning: %v\n", candidate.ID, mediaErr)
+		} else if mediaResult != nil {
+			fmt.Printf("[%s] saved demo media (%d screenshot(s), video=%t)\n",
+				candidate.ID, len(mediaResult.Screenshots), mediaResult.VideoPath != "")
+		}
 
 		fmt.Printf("[%s] wiring into docker-compose, CI, and oCIS config…\n", candidate.ID)
 		if err := build.WireExtension(worktreePath, candidate.ID); err != nil {

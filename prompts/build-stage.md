@@ -108,6 +108,24 @@ instance. Write real tests that log in, navigate, and assert visible state.
   )
   ```
 
+## Demo quality
+
+These tests run against a live oCIS instance and are recorded on every gate
+run — one video across the whole test file, one screenshot per `test()` at
+the moment it finishes. Those recordings are used as-is for product demos,
+so write the spec as a believable walkthrough, not just the minimum to pass:
+
+- Keep one `test()` per acceptance bullet (see the comment at the top of
+  `acceptance.spec.ts`). Each test should land on a distinct, visually
+  meaningful state — each becomes one candidate screenshot.
+- Mocked LLM/API routes must return short, realistic, extension-relevant
+  sample content — never a placeholder string like `'mock result'` or `'test
+  data'`. Whatever text the mock returns is what shows up on screen.
+- End each test on a settled, fully-rendered UI state, not mid-transition or
+  mid-loading — the final `await` should wait for the completed result
+  (e.g. the rendered LLM response, the updated list), not fire immediately
+  after an action.
+
 - When a click is blocked by a modal, overlay, or backdrop: read the component's source file first to identify the actual dismissal mechanism. Then either:
   - Add a `page.addLocatorHandler()` call at the top of the test that auto-fires the dismissal whenever that overlay intercepts a click:
     ```typescript
