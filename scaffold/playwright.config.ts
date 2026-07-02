@@ -12,6 +12,11 @@ export default defineConfig({
     // Trace mode is forced via `--trace` on the gate's own invocation
     // (gate/run-gate.sh) instead of here, so it doesn't ship in every
     // extension's committed config.
-    screenshot: 'only-on-failure'
+    //
+    // Full video/screenshot capture only during the gate's CI run (CI=true
+    // is set by gate/run-gate.sh) for demo-media generation; local
+    // `pnpm test:e2e` stays lightweight.
+    screenshot: process.env.CI ? 'on' : 'only-on-failure',
+    video: process.env.CI ? 'on' : 'off'
   }
 })

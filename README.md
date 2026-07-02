@@ -43,7 +43,11 @@ before writing any code:
    If oCIS is not running, the e2e stage fails. The e2e stage is serialized
    across concurrently-built candidates so their Playwright sessions don't
    collide.
-6. **Publish:** pushes the branch and opens a GitHub PR once all stages pass
+6. **Publish:** pushes the branch and opens a GitHub PR once all stages pass.
+   Before publishing, extctl also saves a demo video and up to a few
+   screenshots to `runs/<date>/<id>/media/`, captured from the e2e stage's
+   own Playwright run (see `media` in `extctl.example.yaml`) — local
+   artifacts only, nothing is uploaded or linked automatically.
 
 If a stage fails after repair, the build is paused and a blocked state is
 recorded in `runs/<date>/slate.json` for manual resolution.
@@ -56,6 +60,8 @@ recorded in `runs/<date>/slate.json` for manual resolution.
 - [gh CLI](https://cli.github.com/) installed and authenticated (`gh auth status`)
 - A Jira Cloud instance with an API token
 - A local checkout of `owncloud/web-extensions` (or equivalent target repo)
+- [ffmpeg](https://ffmpeg.org/) installed and on `PATH` (optional — enables
+  demo video generation; screenshots work without it)
 
 ## Installation
 

@@ -18,6 +18,7 @@ type Config struct {
 	Claude                Claude     `yaml:"claude"`
 	Decay                 Decay      `yaml:"decay"`
 	Prompts               Prompts    `yaml:"prompts"`
+	Media                 Media      `yaml:"media"`
 	IdeaPool      string `yaml:"idea_pool"`
 	RunsDir       string `yaml:"runs_dir"`
 	DeliveredYAML string `yaml:"delivered_yaml"`
@@ -50,6 +51,14 @@ type Claude struct {
 type Decay struct {
 	MaxAppearances int    `yaml:"max_appearances"`
 	Action         string `yaml:"action"` // backlog | decline | ask
+}
+
+type Media struct {
+	// Pointer so applyDefaults can distinguish "unset in YAML" (defaults to
+	// true) from an explicit `enabled: false`.
+	Enabled        *bool `yaml:"enabled"`
+	MaxScreenshots int   `yaml:"max_screenshots"`
+	MaxVideoMB     int   `yaml:"max_video_mb"`
 }
 
 type Prompts struct {
@@ -102,6 +111,16 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Decay.Action == "" {
 		c.Decay.Action = "backlog"
+	}
+	if c.Media.Enabled == nil {
+		enabled := true
+		c.Media.Enabled = &enabled
+	}
+	if c.Media.MaxScreenshots == 0 {
+		c.Media.MaxScreenshots = 3
+	}
+	if c.Media.MaxVideoMB == 0 {
+		c.Media.MaxVideoMB = 8
 	}
 	if c.Prompts.GenSpecs == "" {
 		c.Prompts.GenSpecs = "prompts/gen-specs.md"

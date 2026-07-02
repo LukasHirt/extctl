@@ -16,6 +16,7 @@ import (
 	githubpkg "github.com/LukasHirt/extctl/internal/github"
 	gitpkg "github.com/LukasHirt/extctl/internal/git"
 	"github.com/LukasHirt/extctl/internal/jira"
+	"github.com/LukasHirt/extctl/internal/media"
 	"github.com/LukasHirt/extctl/internal/state"
 )
 
@@ -471,6 +472,14 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 	bs.Phase = build.PhasePublishing
 	_ = build.SaveState(runsDir, bs)
 
+	if mediaResult, mediaErr := media.Generate(opts.Config, worktreePath, candidate.ID,
+		filepath.Join(runsDir, date, candidate.ID, "media")); mediaErr != nil {
+		logf("build: warning: %v\n", mediaErr)
+	} else if mediaResult != nil {
+		logf("build: saved demo media (%d screenshot(s), video=%t)\n",
+			len(mediaResult.Screenshots), mediaResult.VideoPath != "")
+	}
+
 	logf("build: wiring into docker-compose, CI, and oCIS config…\n")
 	if err := build.WireExtension(worktreePath, candidate.ID); err != nil {
 		return fmt.Errorf("wire extension: %w", err)
@@ -558,6 +567,15 @@ func publishBlocked(opts Options, date string, candidate state.Candidate, bs *bu
 	bs.Phase = build.PhaseBlocked
 	bs.ErrorMsg = reason
 	_ = build.SaveState(runsDir, bs)
+
+	worktreePath := filepath.Join(runsDir, date, candidate.ID, "worktree")
+	if mediaResult, mediaErr := media.Generate(opts.Config, worktreePath, candidate.ID,
+		filepath.Join(runsDir, date, candidate.ID, "media")); mediaErr != nil {
+		logf("build: warning: %v\n", mediaErr)
+	} else if mediaResult != nil {
+		logf("build: saved demo media (%d screenshot(s), video=%t)\n",
+			len(mediaResult.Screenshots), mediaResult.VideoPath != "")
+	}
 
 	logf("build: exhausted repairs; pushing draft PR for manual review…\n")
 
