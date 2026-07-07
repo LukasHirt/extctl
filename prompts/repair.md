@@ -45,8 +45,9 @@ pass in one browser and fail in another for different reasons.
    - Or adding an explicit dismissal step immediately before the blocked action, using the specific mechanism you found in the source.
    For `OcModal` specifically: dismiss via `.oc-modal-body-actions-cancel` (cancel button). Prefer `addLocatorHandler` when the overlay can reappear across multiple steps. Do NOT modify production source (components, CSS, composables, or any `.vue`/`.ts` file) to make the element click-through — setting `pointer-events: none`, `display: none`, or any equivalent bypass in production code is always wrong here.
 5. Do NOT weaken lint rules or add `// eslint-disable` to silence errors.
-6. Touch ONLY `packages/web-app-{{EXT_ID}}/`. Never edit other packages or pipeline files.
+6. Touch ONLY `packages/web-app-{{EXT_ID}}/`. Never edit other packages or pipeline files. This includes shared repo config such as `.gitignore` — never edit it as a workaround, even to unblock hygiene.
 7. No hardcoded provider hostnames, API keys, or secrets.
+8. If a prior stage left a stray file outside `packages/web-app-{{EXT_ID}}/`, remove it with `git add <path> && git rm -f <path>` rather than `rm`/`mv` (unavailable here) or a `.gitignore` entry.
 
 ## After fixing
 
