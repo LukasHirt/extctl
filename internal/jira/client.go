@@ -90,7 +90,11 @@ func (c *Client) Transition(issueKey, statusName string) error {
 		}
 	}
 	if transitionID == "" {
-		return fmt.Errorf("transition %q not found for issue %s", statusName, issueKey)
+		available := make([]string, len(result.Transitions))
+		for i, t := range result.Transitions {
+			available[i] = t.Name
+		}
+		return fmt.Errorf("transition %q not found for issue %s (available from current status: %v)", statusName, issueKey, available)
 	}
 
 	body := map[string]any{

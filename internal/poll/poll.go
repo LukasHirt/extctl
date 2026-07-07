@@ -212,11 +212,12 @@ func Run(opts Options) (*Result, error) {
 
 	var wg sync.WaitGroup
 	var budgetMu sync.Mutex
+	var worktreeMu sync.Mutex
 	for _, p := range allPicked {
 		wg.Add(1)
 		go func(candidate state.Candidate) {
 			defer wg.Done()
-			if err := runBuild(opts, date, candidate, jiraClient, &budgetMu); err != nil {
+			if err := runBuild(opts, date, candidate, jiraClient, &budgetMu, &worktreeMu); err != nil {
 				fmt.Printf("poll: build error for %s: %v\n", candidate.ID, err)
 			}
 		}(p)
@@ -260,7 +261,7 @@ func checkMergedPRs(opts Options, date string, slate *state.Slate, jiraClient *j
 
 // runBuild runs the full Phase B pipeline for a picked candidate:
 // build → gate → repair loop → publish (or draft PR on block)
-func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *jira.Client, budgetMu *sync.Mutex) error {
+func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *jira.Client, budgetMu, worktreeMu *sync.Mutex) error {
 	runsDir := opts.Config.RunsDir
 
 	// Idempotency: check existing build state.
@@ -308,12 +309,12 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 		switch bs.Phase {
 		case build.PhaseGated:
 			logf("build: gate already passed; going to publish\n")
-			return publish(opts, date, candidate, bs, false, jiraClient)
+			return publish(opts, date, candidate, bs, false, jiraClient, worktreeMu)
 		case build.PhaseGating, build.PhaseRepairing:
 			worktreePath := filepath.Join(runsDir, date, candidate.ID, "worktree")
 			outputDir := filepath.Join(runsDir, date, candidate.ID)
 			logf("build: resuming from %s (session %s, attempts %d)…\n", bs.Phase, bs.SessionID, bs.Attempts)
-			return gateRepairPublish(opts, date, candidate, bs, worktreePath, outputDir, bs.SessionID, jiraClient)
+			return gateRepairPublish(opts, date, candidate, bs, worktreePath, outputDir, bs.SessionID, jiraClient, worktreeMu)
 		case build.PhasePlanning, build.PhaseStaging:
 			logf("build: restarting from %s (previous run interrupted)\n", bs.Phase)
 			// fall through to re-enter from the top of the pipeline
@@ -349,7 +350,10 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 	repoPath := opts.Config.TargetRepo.Checkout
 	baseBranch := "origin/" + opts.Config.DefaultBranch
 	logf("build: creating worktree %s on branch %s…\n", worktreePath, branch)
-	if err := gitpkg.CreateWorktree(repoPath, worktreePath, branch, baseBranch); err != nil {
+	worktreeMu.Lock()
+	err = gitpkg.CreateWorktree(repoPath, worktreePath, branch, baseBranch)
+	worktreeMu.Unlock()
+	if err != nil {
 		return fmt.Errorf("create worktree: %w", err)
 	}
 
@@ -390,7 +394,7 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 
 // gateRepairPublish runs the gate → repair loop → publish tail.
 // Called after BuildStage and when resuming a PhaseGating/PhaseRepairing build.
-func gateRepairPublish(opts Options, date string, candidate state.Candidate, bs *build.State, worktreePath, outputDir, sessionID string, jiraClient *jira.Client) error {
+func gateRepairPublish(opts Options, date string, candidate state.Candidate, bs *build.State, worktreePath, outputDir, sessionID string, jiraClient *jira.Client, worktreeMu *sync.Mutex) error {
 	runsDir := opts.Config.RunsDir
 	logf := func(format string, args ...any) {
 		fmt.Printf("["+candidate.ID+"] "+format, args...)
@@ -457,11 +461,11 @@ func gateRepairPublish(opts Options, date string, candidate state.Candidate, bs 
 	bs.Phase = build.PhaseGated
 	_ = build.SaveState(runsDir, bs)
 
-	return publish(opts, date, candidate, bs, false, jiraClient)
+	return publish(opts, date, candidate, bs, false, jiraClient, worktreeMu)
 }
 
 // publish pushes the branch and opens a ready-for-review PR.
-func publish(opts Options, date string, candidate state.Candidate, bs *build.State, isDraft bool, jiraClient *jira.Client) error {
+func publish(opts Options, date string, candidate state.Candidate, bs *build.State, isDraft bool, jiraClient *jira.Client, worktreeMu *sync.Mutex) error {
 	logf := func(format string, args ...any) {
 		fmt.Printf("["+candidate.ID+"] "+format, args...)
 	}
@@ -547,7 +551,10 @@ func publish(opts Options, date string, candidate state.Candidate, bs *build.Sta
 	logf("build: done — PR #%d: %s\n", pr.Number, pr.URL)
 
 	// Clean up worktree only on success.
-	if err := gitpkg.RemoveWorktree(repoPath, worktreePath); err != nil {
+	worktreeMu.Lock()
+	err = gitpkg.RemoveWorktree(repoPath, worktreePath)
+	worktreeMu.Unlock()
+	if err != nil {
 		logf("build: warning: could not remove worktree: %v\n", err)
 	}
 
