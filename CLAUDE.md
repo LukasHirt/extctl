@@ -107,6 +107,18 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
   passed (the gate's optional 5th argument), and is serialized across
   concurrently-built candidates via a lock so their Playwright sessions don't
   collide on the shared admin user.
+
+  Before every gate invocation (initial and each repair retry), `gate.Run` in
+  `internal/gate/clean.go` runs `git status --porcelain` and, for anything
+  outside `packages/web-app-<id>/` and the allowlisted root files
+  (`pnpm-lock.yaml`, `docker-compose.yml`, `dev/docker/ocis.apps.yaml`,
+  `support/actions/ocis.apps.yaml`), deletes untracked stray files/dirs and
+  discards uncommitted edits to tracked ones. This is an orchestrator action —
+  the sandboxed build/repair Claude invocation has no way to clean up an
+  artifact it accidentally writes outside its own package directory, so
+  leaving that to the orchestrator prevents both a permanently-failing
+  hygiene stage and a repair session working around it by editing shared repo
+  config (e.g. root `.gitignore`) instead.
 - `extctl release` — scans the web-extensions checkout for extensions that have
   been merged to the default branch (`packages/web-app-*` present on
   `origin/<default_branch>`) but never released, and creates + pushes a signed
@@ -169,7 +181,8 @@ allowlists by prompt:
 - Per-stage build (`build-stage.md`) and repair (`repair.md`, same allowlist):
   `Read,Edit,Write,Grep,Glob,Bash(pnpm install *),Bash(pnpm build),
   Bash(pnpm test:unit *),Bash(pnpm lint *),Bash(pnpm check:types),
-  Bash(git add *),Bash(git commit *),Bash(git status),Bash(git diff *)`
+  Bash(git add *),Bash(git commit *),Bash(git status),Bash(git diff *),
+  Bash(git rm -f *)`
 
   Package scripts: each `packages/web-app-*` only defines `build`, `build:w`,
   `check:types`, `test:unit`, `test:e2e` — there is no per-package `test` or

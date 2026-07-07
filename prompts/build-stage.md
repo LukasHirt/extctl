@@ -57,7 +57,10 @@ what is described for stage {{STAGE_NUM}}.
   LLM-related code to understand the API. The composable enforces same-origin
   and attaches the oCIS token internally; you do not need to handle auth.
 - All new files must live inside `packages/web-app-{{EXT_ID}}/`.
-- Do NOT touch any files outside `packages/web-app-{{EXT_ID}}/`.
+- Do NOT touch any files outside `packages/web-app-{{EXT_ID}}/`. If you
+  accidentally create one (e.g. a scratch/debug script), remove it with
+  `git add <path> && git rm -f <path>` before committing — never work around
+  it by editing shared repo config like root `.gitignore`.
 - Do NOT push to remote. Do NOT open pull requests.
 
 ## Scaffold files already in place

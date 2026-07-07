@@ -44,6 +44,7 @@ var buildTools = []string{
 	"Bash(pnpm install *)", "Bash(pnpm build)", "Bash(pnpm test:unit *)",
 	"Bash(pnpm lint *)", "Bash(pnpm check:types)", "Bash(git add *)",
 	"Bash(git commit *)", "Bash(git status)", "Bash(git diff *)",
+	"Bash(git rm -f *)",
 }
 
 // Repair runs a single repair attempt on gate failure using the same Claude session.

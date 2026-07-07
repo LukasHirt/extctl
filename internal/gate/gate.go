@@ -50,6 +50,15 @@ func Run(scriptPath, worktreePath, extID, outputDir string, specBulletCount int,
 		return nil, fmt.Errorf("mkdir gate output dir: %w", err)
 	}
 
+	cleaned, err := cleanStrayFiles(worktreePath, extID)
+	if err != nil {
+		return nil, fmt.Errorf("clean stray files before gate: %w", err)
+	}
+	if len(cleaned) > 0 {
+		fmt.Printf("%sgate: cleaned stray file(s) outside packages/web-app-%s/ before hygiene check: %s\n",
+			prefix, extID, strings.Join(cleaned, ", "))
+	}
+
 	args := []string{worktreePath, extID, outputDir, fmt.Sprintf("%d", specBulletCount), mainCheckout}
 	cmd := execCommand(scriptPath, args...)
 
@@ -196,7 +205,7 @@ func renderANSI(s string) string {
 							lines[row] = lines[row][:col]
 						}
 					}
-				// 'm' (SGR colors), 'G' (cursor column), 'J' (erase display): discard
+					// 'm' (SGR colors), 'G' (cursor column), 'J' (erase display): discard
 				}
 				i = j + 1
 				continue
