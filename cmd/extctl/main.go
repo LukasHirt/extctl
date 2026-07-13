@@ -459,7 +459,7 @@ var approveStagesCmd = &cobra.Command{
 				Config:       cfg,
 				CandidateID:  candidate.ID,
 				Title:        candidate.Title,
-				Description:  firstNonEmptyLine(candidate.SpecMD),
+				Description:  candidateDescription(candidate),
 				WorktreePath: worktreePath,
 				LogPrefix:    "[" + candidate.ID + "] ",
 			}); err != nil {
@@ -720,19 +720,16 @@ var approveStagesCmd = &cobra.Command{
 	},
 }
 
-// countSpecBullets counts bullet lines in specMD for gate scoring.
-// firstNonEmptyLine returns the first non-empty, non-heading line of s, trimmed.
-// Used to extract a short description from a spec for the scaffold package.json.
-func firstNonEmptyLine(s string) string {
-	for _, line := range strings.Split(s, "\n") {
-		trimmed := strings.TrimSpace(strings.TrimLeft(line, "#"))
-		if trimmed != "" {
-			return trimmed
-		}
+// candidateDescription returns the candidate's parsed problem statement,
+// falling back to its title for slates persisted before Description existed.
+func candidateDescription(c *state.Candidate) string {
+	if c.Description != "" {
+		return c.Description
 	}
-	return ""
+	return c.Title
 }
 
+// countSpecBullets counts bullet lines in specMD for gate scoring.
 func countSpecBullets(specMD string) int {
 	n := 0
 	for _, line := range strings.Split(specMD, "\n") {

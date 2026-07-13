@@ -18,29 +18,30 @@ const (
 	StatusPicked        CandidateStatus = "picked"
 	StatusDeclined      CandidateStatus = "declined"
 	StatusDecayed       CandidateStatus = "decayed"    // hit max appearances
-	StatusBacklogged    CandidateStatus = "backlogged"  // promoted to backlog after decay
+	StatusBacklogged    CandidateStatus = "backlogged" // promoted to backlog after decay
 	StatusRejected      CandidateStatus = "rejected"   // permanently invalid, never repropose
 )
 
 // Candidate is a single spec candidate in the daily slate.
 type Candidate struct {
-	ID          string          `json:"id"`
-	Title       string          `json:"title"`
-	JiraKey     string          `json:"jira_key"`
-	JiraURL     string          `json:"jira_url"`
-	Status      CandidateStatus `json:"status"`
-	Appearances int             `json:"appearances"`       // 1 = first day offered
-	Origin      string          `json:"origin"`            // "generated" | "carryover" | "manual"
-	FirstDate   string          `json:"first_date"`        // YYYY-MM-DD, day first offered
-	Effort        string          `json:"effort"`            // S | M | L
-	SpecMD        string          `json:"spec_md"`           // full ## CANDIDATE block
+	ID             string          `json:"id"`
+	Title          string          `json:"title"`
+	JiraKey        string          `json:"jira_key"`
+	JiraURL        string          `json:"jira_url"`
+	Status         CandidateStatus `json:"status"`
+	Appearances    int             `json:"appearances"`               // 1 = first day offered
+	Origin         string          `json:"origin"`                    // "generated" | "carryover" | "manual"
+	FirstDate      string          `json:"first_date"`                // YYYY-MM-DD, day first offered
+	Effort         string          `json:"effort"`                    // S | M | L
+	SpecMD         string          `json:"spec_md"`                   // full ## CANDIDATE block
+	Description    string          `json:"description,omitempty"`     // problem statement from the spec, used for package.json
 	IssueComments  string          `json:"issue_comments,omitempty"`  // formatted Jira comments fetched at pick time
 	RejectedReason string          `json:"rejected_reason,omitempty"` // reason provided when discarding during spec review
 }
 
 // Slate is the state file for one workday: runs/<date>/slate.json
 type Slate struct {
-	Date       string      `json:"date"`        // YYYY-MM-DD
+	Date       string      `json:"date"` // YYYY-MM-DD
 	Candidates []Candidate `json:"candidates"`
 	CreatedAt  time.Time   `json:"created_at"`
 	UpdatedAt  time.Time   `json:"updated_at"`
