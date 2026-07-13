@@ -14,21 +14,18 @@ Your task is to fix the failing stage(s) and recommit.
 
 ## Diagnosing e2e failures
 
-The gate log above only prints a truncated console summary of each Playwright
-failure. Before touching any e2e test, read the richer artifacts Playwright
-already wrote to disk for every failed test:
+If the e2e stage failed, the gate log above has already been deduplicated and
+enriched: identical failures across browser projects (chrome/firefox/webkit)
+are collapsed into a single entry listing which projects hit it, and each
+distinct failure's accessibility-tree snapshot (what was actually rendered,
+what elements existed, their names/roles) is embedded inline under "Page state
+at failure" — this is the ground truth for "why didn't my locator match".
+Read that embedded snapshot before guessing at a selector fix; you shouldn't
+need to separately open `test-results/*/error-context.md` for text content.
 
-- `packages/web-app-{{EXT_ID}}/test-results/*/error-context.md` — an
-  accessibility-tree snapshot of the exact page state at the moment the test
-  failed (what was actually rendered, what elements existed, their names/roles).
-  This is the ground truth for "why didn't my locator match" — read it before
-  guessing at a selector fix.
-- `packages/web-app-{{EXT_ID}}/test-results/*/*.png`, if present — a screenshot
-  of the failure state. Use the `Read` tool to view it directly.
-
-Each failing test gets its own subdirectory under `test-results/` (one per
-browser project — chrome/firefox/webkit); check all of them, since a test can
-pass in one browser and fail in another for different reasons.
+A screenshot may still help for purely visual issues (layout, styling) that an
+accessibility tree can't show — if so, `packages/web-app-{{EXT_ID}}/test-results/*/*.png`
+is available via the `Read` tool.
 
 ## Repair rules
 

@@ -265,7 +265,13 @@ if [ -n "$MAIN_CHECKOUT" ]; then
   # --trace retain-on-failure: with --retries=0, 'on-first-retry' (the config default)
   # never fires, so force a trace on the one attempt that does run. Forced here rather
   # than in the extension's own playwright.config.ts so it never ships in a merged PR.
-  if ! (cd "$EXT_DIR" && CI=true pnpm playwright test --retries=0 --trace retain-on-failure 2>&1 \
+  # --reporter=list,json runs the usual console reporter (unchanged, still written to
+  # gate.log below) alongside the JSON reporter, whose structured output is redirected
+  # via PLAYWRIGHT_JSON_OUTPUT_FILE to e2e-report.json instead of stdout. gate.Digest
+  # reads that file to deduplicate identical failures across browser projects and embed
+  # each one's error-context.md when building the next repair prompt.
+  if ! (cd "$EXT_DIR" && CI=true PLAYWRIGHT_JSON_OUTPUT_FILE="$OUTPUT_DIR/e2e-report.json" \
+      pnpm playwright test --retries=0 --trace retain-on-failure --reporter=list,json 2>&1 \
       | sed $'s/\x1b\\[[0-9;]*[a-zA-Z]//g' \
       | tee -a "$LOG"); then
     e2e_result="fail"

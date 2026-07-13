@@ -429,6 +429,7 @@ func gateRepairPublish(opts Options, date string, candidate state.Candidate, bs 
 		_ = build.SaveState(runsDir, bs)
 
 		gateLog, _ := gate.ReadLog(outputDir)
+		digestedLog := gate.Digest(gateLog, filepath.Join(outputDir, "e2e-report.json"))
 		repairResult, repairErr := build.Repair(build.Options{
 			Config:       opts.Config,
 			CandidateID:  candidate.ID,
@@ -438,7 +439,7 @@ func gateRepairPublish(opts Options, date string, candidate state.Candidate, bs 
 			Date:         date,
 			WorktreePath: worktreePath,
 			LogPrefix:    logPrefix,
-		}, gateLog, sessionID, bs.Attempts+1)
+		}, digestedLog, sessionID, bs.Attempts+1)
 		if repairErr != nil {
 			return fmt.Errorf("repair attempt %d: %w", bs.Attempts, repairErr)
 		}
@@ -628,6 +629,7 @@ func publishBlocked(opts Options, date string, candidate state.Candidate, bs *bu
 
 	// Comment on the PR with failure details.
 	gateLog, _ := gate.ReadLog(outputDir)
+	digestedLog := gate.Digest(gateLog, filepath.Join(outputDir, "e2e-report.json"))
 	failComment := fmt.Sprintf(
 		"## Automated repair exhausted\n\nThe pipeline ran %d repair attempt(s) and the gate still failed.\n"+
 			"**Manual fix required** — review the gate output below and push a fix commit.\n\n"+
@@ -636,7 +638,7 @@ func publishBlocked(opts Options, date string, candidate state.Candidate, bs *bu
 		bs.Attempts-1,
 		gateResult.Stages.Hygiene, gateResult.Stages.Build,
 		gateResult.Stages.Lint, gateResult.Stages.Unit, gateResult.Stages.E2E,
-		truncate(gateLog, 3000),
+		truncate(digestedLog, 3000),
 	)
 	if err := githubpkg.AddComment(opts.Config.TargetRepo.Remote, pr.Number, failComment); err != nil {
 		logf("build: warning: could not comment on draft PR: %v\n", err)
