@@ -213,10 +213,11 @@ func Run(opts Options) (*Result, error) {
 		var fresh []state.Candidate
 		for _, c := range candidates {
 			fresh = append(fresh, state.Candidate{
-				ID:     c.ID,
-				Title:  c.Title,
-				Effort: c.Effort,
-				Origin: "generated",
+				ID:          c.ID,
+				Title:       c.Title,
+				Effort:      c.Effort,
+				Origin:      "generated",
+				Description: c.Problem,
 			})
 		}
 		return &Result{Date: date, Carryovers: carryovers, Fresh: fresh}, nil
@@ -318,6 +319,7 @@ func Run(opts Options) (*Result, error) {
 			FirstDate:   date,
 			Effort:      pc.Effort,
 			SpecMD:      pc.Raw,
+			Description: pc.Problem,
 		})
 	}
 
@@ -332,6 +334,7 @@ func Run(opts Options) (*Result, error) {
 			Origin:         "generated",
 			FirstDate:      date,
 			SpecMD:         r.Candidate.Raw,
+			Description:    r.Candidate.Problem,
 			Appearances:    1,
 		})
 	}
