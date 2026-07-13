@@ -3,6 +3,7 @@ package gen
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,10 @@ import (
 	"github.com/LukasHirt/extctl/internal/jira"
 	"github.com/LukasHirt/extctl/internal/state"
 )
+
+// runClaude is the claude.Run function used to invoke the CLI. Replaced in
+// tests to avoid shelling out to the real claude binary.
+var runClaude = claude.Run
 
 // Options controls a single gen run.
 type Options struct {
@@ -37,6 +42,15 @@ type Result struct {
 type rejectedSpec struct {
 	Candidate claude.ParsedCandidate
 	Reason    string
+}
+
+// reviewItem pairs a candidate with the Claude session that produced it, so
+// an interactive revision ("r" in reviewCandidates) can resume that session
+// instead of re-investigating the repo from scratch.
+type reviewItem struct {
+	Candidate claude.ParsedCandidate
+	SessionID string
+	Round     int // number of "r" revisions applied so far, for output file naming
 }
 
 // Run executes the morning gen flow:
@@ -182,7 +196,7 @@ func Run(opts Options) (*Result, error) {
 
 		fmt.Printf("Running claude (working dir: %s)…\n", claudeOpts.WorkDir)
 
-		result, err = claude.Run(claudeOpts)
+		result, err = runClaude(claudeOpts)
 		if err != nil {
 			return nil, fmt.Errorf("claude run: %w", err)
 		}
@@ -227,12 +241,12 @@ func Run(opts Options) (*Result, error) {
 	var allRejected []rejectedSpec
 	if !opts.NoReview {
 		extraDelivered := map[string]bool{}
-		pendingForReview := candidates
+		pendingForReview := toReviewItems(candidates, result.SessionID)
 		var allApproved []claude.ParsedCandidate
 		replacementRound := 0
 
 		for {
-			approved, rejected, err := reviewCandidates(pendingForReview, opts.Config.RunsDir, date)
+			approved, rejected, err := reviewCandidates(pendingForReview, opts.Config, opts.Model, opts.Config.RunsDir, date, os.Stdin)
 			if err != nil {
 				return nil, fmt.Errorf("review candidates: %w", err)
 			}
@@ -257,10 +271,11 @@ func Run(opts Options) (*Result, error) {
 
 			replacementRound++
 			fmt.Printf("\n%d candidate(s) discarded — generating %d replacement(s)…\n", len(rejected), needed)
-			pendingForReview, err = generateReplacements(opts, needed, expandedDelivered, carryovers, date, replacementRound)
+			replacements, sessionID, err := generateReplacements(opts, needed, expandedDelivered, carryovers, date, replacementRound)
 			if err != nil {
 				return nil, fmt.Errorf("generate replacements (round %d): %w", replacementRound, err)
 			}
+			pendingForReview = toReviewItems(replacements, sessionID)
 			if len(pendingForReview) == 0 {
 				fmt.Println("No replacement candidates returned — proceeding with what was approved.")
 				break
@@ -373,16 +388,31 @@ func Run(opts Options) (*Result, error) {
 	}, nil
 }
 
+// toReviewItems wraps a batch of candidates that all came from the same
+// Claude session into reviewItems sharing that sessionID.
+func toReviewItems(candidates []claude.ParsedCandidate, sessionID string) []reviewItem {
+	items := make([]reviewItem, len(candidates))
+	for i, c := range candidates {
+		items[i] = reviewItem{Candidate: c, SessionID: sessionID}
+	}
+	return items
+}
+
 // reviewCandidates presents each candidate interactively and returns approved
 // and rejected lists. The user can approve (a), discard with a reason (d),
-// edit the spec file (e), or show the full spec (s).
-func reviewCandidates(candidates []claude.ParsedCandidate, runsDir, date string) ([]claude.ParsedCandidate, []rejectedSpec, error) {
-	reader := bufio.NewReader(os.Stdin)
+// show the full spec (s), or send a free-text follow-up question or
+// revision directive to Claude (r) — Claude resumes the session that
+// generated the candidate so it doesn't have to re-investigate the repo.
+func reviewCandidates(items []reviewItem, cfg *config.Config, model, runsDir, date string, stdin io.Reader) ([]claude.ParsedCandidate, []rejectedSpec, error) {
+	reader := bufio.NewReader(stdin)
 	var approved []claude.ParsedCandidate
 	var rejected []rejectedSpec
-	total := len(candidates)
+	total := len(items)
 
-	for i, c := range candidates {
+	for i := range items {
+		item := &items[i]
+		c := item.Candidate
+
 		// Write spec to file immediately so the user can edit it before deciding.
 		specPath, err := writeEditableSpec(runsDir, date, c.ID, c.Raw)
 		if err != nil {
@@ -395,7 +425,7 @@ func reviewCandidates(candidates []claude.ParsedCandidate, runsDir, date string)
 
 	prompt:
 		for {
-			fmt.Print("\n[a]pprove  [d]iscard  [s]how full spec\n> ")
+			fmt.Print("\n[a]pprove  [d]iscard  [s]how full spec  [r]evise/ask\n> ")
 			line, _ := reader.ReadString('\n')
 			choice := strings.TrimSpace(strings.ToLower(line))
 
@@ -420,21 +450,107 @@ func reviewCandidates(candidates []claude.ParsedCandidate, runsDir, date string)
 			case "s":
 				fmt.Println()
 				fmt.Println(c.Raw)
+
+			case "r":
+				fmt.Print("Question or revision instruction: ")
+				instruction, _ := reader.ReadString('\n')
+				instruction = strings.TrimSpace(instruction)
+				if instruction == "" {
+					fmt.Println("(empty instruction, ignored)")
+					continue
+				}
+
+				item.Round++
+				updated, newSessionID, err := reviseCandidate(cfg, model, runsDir, date, c, instruction, item.SessionID, item.Round)
+				if err != nil {
+					fmt.Printf("✗ Revision failed: %v\n", err)
+					continue
+				}
+
+				c = updated
+				item.Candidate = updated
+				item.SessionID = newSessionID
+
+				if _, err := writeEditableSpec(runsDir, date, c.ID, c.Raw); err != nil {
+					fmt.Printf("✗ Could not update %s: %v\n", specPath, err)
+				}
+				fmt.Println()
+				printCandidateSummary(c)
 			}
 		}
 	}
 	return approved, rejected, nil
 }
 
+// reviseCandidate sends a free-text follow-up (question or change directive)
+// about a candidate to Claude, resuming the session that produced it. It
+// returns the (possibly updated) candidate and the session id to resume for
+// any further follow-up.
+func reviseCandidate(cfg *config.Config, model, runsDir, date string, c claude.ParsedCandidate, instruction, sessionID string, round int) (claude.ParsedCandidate, string, error) {
+	promptBytes, err := os.ReadFile(cfg.Prompts.Revise)
+	if err != nil {
+		return claude.ParsedCandidate{}, "", fmt.Errorf("read revise prompt %s: %w", cfg.Prompts.Revise, err)
+	}
+	prompt := strings.NewReplacer(
+		"{{CANDIDATE_SPEC}}", c.Raw,
+		"{{USER_INSTRUCTION}}", instruction,
+	).Replace(string(promptBytes))
+
+	outputFile := filepath.Join(runsDir, date, fmt.Sprintf("revise-%s-%d.jsonl", c.ID, round))
+	claudeOpts := claude.RunOptions{
+		Prompt:       prompt,
+		AllowedTools: []string{"Read", "Grep", "Glob"},
+		WorkDir:      cfg.TargetRepo.Checkout,
+		OutputFile:   outputFile,
+		Model:        model,
+		Resume:       sessionID,
+	}
+
+	fmt.Printf("Running claude (resuming session %s)…\n", sessionID)
+	result, err := runClaude(claudeOpts)
+	if err != nil {
+		return claude.ParsedCandidate{}, "", fmt.Errorf("claude revise run: %w", err)
+	}
+	fmt.Printf("Claude finished: %d turns, $%.4f\n", result.NumTurns, result.TotalCostUSD)
+
+	const marker = "## CANDIDATE"
+	idx := strings.Index(result.FullText, marker)
+	if idx < 0 {
+		return claude.ParsedCandidate{}, "", fmt.Errorf("response did not contain a %q block", marker)
+	}
+	response := strings.TrimSpace(result.FullText[:idx])
+	response = strings.TrimPrefix(response, "## RESPONSE")
+	response = strings.TrimSpace(response)
+	if response != "" {
+		fmt.Println()
+		fmt.Println(response)
+	}
+
+	revised, err := claude.ParseCandidates(result.FullText[idx:])
+	if err != nil {
+		return claude.ParsedCandidate{}, "", fmt.Errorf("parse revised candidate: %w", err)
+	}
+	if len(revised) != 1 {
+		return claude.ParsedCandidate{}, "", fmt.Errorf("expected exactly 1 candidate block in response, got %d", len(revised))
+	}
+	if revised[0].ID != c.ID {
+		return claude.ParsedCandidate{}, "", fmt.Errorf("response changed candidate id from %q to %q", c.ID, revised[0].ID)
+	}
+
+	return revised[0], result.SessionID, nil
+}
+
 // generateReplacements runs Claude to produce count replacement candidates,
 // using an expanded deliveredIDs map that includes the just-rejected IDs.
-// Output is written to runs/<date>/specgen-r<round>.jsonl so the original is preserved.
-func generateReplacements(opts Options, count int, deliveredIDs map[string]bool, carryovers []state.Candidate, date string, round int) ([]claude.ParsedCandidate, error) {
+// Output is written to runs/<date>/specgen-r<round>.jsonl so the original is
+// preserved. It also returns the session id of this batch's Claude call, so
+// the replacement candidates can be revised interactively during review.
+func generateReplacements(opts Options, count int, deliveredIDs map[string]bool, carryovers []state.Candidate, date string, round int) ([]claude.ParsedCandidate, string, error) {
 	cfgCopy := *opts.Config
 	cfgCopy.FreshCandidatesPerDay = count
 	prompt, err := buildPrompt(&cfgCopy, carryovers, deliveredIDs)
 	if err != nil {
-		return nil, fmt.Errorf("build replacement prompt: %w", err)
+		return nil, "", fmt.Errorf("build replacement prompt: %w", err)
 	}
 
 	outputFile := filepath.Join(opts.Config.RunsDir, date, fmt.Sprintf("specgen-r%d.jsonl", round))
@@ -446,17 +562,17 @@ func generateReplacements(opts Options, count int, deliveredIDs map[string]bool,
 		Model:        opts.Model,
 	}
 	fmt.Printf("Running claude for %d replacement(s) (round %d)…\n", count, round)
-	result, err := claude.Run(claudeOpts)
+	result, err := runClaude(claudeOpts)
 	if err != nil {
-		return nil, fmt.Errorf("claude replacement run: %w", err)
+		return nil, "", fmt.Errorf("claude replacement run: %w", err)
 	}
 	fmt.Printf("Claude finished: %d turns, $%.4f\n", result.NumTurns, result.TotalCostUSD)
 
 	candidates, err := claude.ParseCandidates(result.FullText)
 	if err != nil {
-		return nil, fmt.Errorf("parse replacement candidates: %w", err)
+		return nil, "", fmt.Errorf("parse replacement candidates: %w", err)
 	}
-	return candidates, nil
+	return candidates, result.SessionID, nil
 }
 
 // writeEditableSpec writes the raw spec markdown to runs/<date>/review-<id>.md
