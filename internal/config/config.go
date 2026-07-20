@@ -19,10 +19,10 @@ type Config struct {
 	Decay                 Decay      `yaml:"decay"`
 	Prompts               Prompts    `yaml:"prompts"`
 	Media                 Media      `yaml:"media"`
-	IdeaPool      string `yaml:"idea_pool"`
-	RunsDir       string `yaml:"runs_dir"`
-	DeliveredYAML string `yaml:"delivered_yaml"`
-	ScaffoldDir   string `yaml:"scaffold_dir"`
+	IdeaPool              string     `yaml:"idea_pool"`
+	RunsDir               string     `yaml:"runs_dir"`
+	DeliveredYAML         string     `yaml:"delivered_yaml"`
+	ScaffoldDir           string     `yaml:"scaffold_dir"`
 }
 
 type TargetRepo struct {
@@ -36,7 +36,7 @@ type Jira struct {
 	CandidateStatus string `yaml:"candidate_status"`
 	PickStatus      string `yaml:"pick_status"`
 	DeclineStatus   string `yaml:"decline_status"`
-	BuildStatus string `yaml:"build_status"` // status to set when the PR is merged
+	BuildStatus     string `yaml:"build_status"` // status to set when the PR is merged
 	PollIntervalMin int    `yaml:"poll_interval_min"`
 	// Token read from EXTCTL_JIRA_TOKEN env var, not stored in config file
 }
@@ -44,6 +44,7 @@ type Jira struct {
 type Claude struct {
 	VersionPin        string  `yaml:"version_pin"`
 	MaxRepairAttempts int     `yaml:"max_repair_attempts"`
+	MaxRebaseAttempts int     `yaml:"max_rebase_attempts"`
 	BudgetUSDPerBuild float64 `yaml:"budget_usd_per_build"`
 	BudgetUSDPerDay   float64 `yaml:"budget_usd_per_day"`
 }
@@ -68,6 +69,7 @@ type Prompts struct {
 	BuildStage   string `yaml:"build_stage"`
 	BuildSummary string `yaml:"build_summary"`
 	Repair       string `yaml:"repair"`
+	RebaseRepair string `yaml:"rebase_repair"`
 	Revise       string `yaml:"revise"`
 }
 
@@ -99,6 +101,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Claude.MaxRepairAttempts == 0 {
 		c.Claude.MaxRepairAttempts = 3
+	}
+	if c.Claude.MaxRebaseAttempts == 0 {
+		c.Claude.MaxRebaseAttempts = 2
 	}
 	if c.Claude.BudgetUSDPerBuild == 0 {
 		c.Claude.BudgetUSDPerBuild = 8
@@ -139,6 +144,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Prompts.Repair == "" {
 		c.Prompts.Repair = "prompts/repair.md"
+	}
+	if c.Prompts.RebaseRepair == "" {
+		c.Prompts.RebaseRepair = "prompts/rebase-repair.md"
 	}
 	if c.Prompts.Revise == "" {
 		c.Prompts.Revise = "prompts/revise.md"

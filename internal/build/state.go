@@ -19,7 +19,8 @@ const (
 	PhaseBuilding     Phase = "building"
 	PhaseGating       Phase = "gating"
 	PhaseRepairing    Phase = "repairing"
-	PhaseGated        Phase = "gated"   // gate passed
+	PhaseGated        Phase = "gated"    // gate passed
+	PhaseRebasing     Phase = "rebasing" // rebasing onto origin/<default> before publish
 	PhasePublishing   Phase = "publishing"
 	PhaseDone         Phase = "done"
 	PhaseBlocked      Phase = "blocked" // gate failed after repair
@@ -51,21 +52,22 @@ type PRResult struct {
 // State is the per-build state written to runs/<date>/<id>/state.json.
 // It is the idempotency key: the poll loop checks this before starting a build.
 type State struct {
-	ID           string      `json:"id"`
-	Date         string      `json:"date"`
-	JiraKey      string      `json:"jira"`
-	Branch       string      `json:"branch"`
-	Phase        Phase       `json:"phase"`
-	Attempts     int         `json:"attempts"`
-	SessionID    string      `json:"session_id,omitempty"`
-	CostUSD      float64     `json:"cost_usd"`
-	Turns        int         `json:"turns"`
-	ScaffoldDone bool        `json:"scaffold_done,omitempty"`
-	CurrentStage int         `json:"current_stage,omitempty"`
-	TotalStages  int         `json:"total_stages,omitempty"`
-	ErrorMsg     string      `json:"error,omitempty"`
-	Gate         *GateResult `json:"gate,omitempty"`
-	PR           *PRResult   `json:"pr,omitempty"`
+	ID                   string      `json:"id"`
+	Date                 string      `json:"date"`
+	JiraKey              string      `json:"jira"`
+	Branch               string      `json:"branch"`
+	Phase                Phase       `json:"phase"`
+	Attempts             int         `json:"attempts"`
+	RebaseAttempts       int         `json:"rebase_attempts,omitempty"`
+	SessionID            string      `json:"session_id,omitempty"`
+	CostUSD              float64     `json:"cost_usd"`
+	Turns                int         `json:"turns"`
+	ScaffoldDone         bool        `json:"scaffold_done,omitempty"`
+	CurrentStage         int         `json:"current_stage,omitempty"`
+	TotalStages          int         `json:"total_stages,omitempty"`
+	ErrorMsg             string      `json:"error,omitempty"`
+	Gate                 *GateResult `json:"gate,omitempty"`
+	PR                   *PRResult   `json:"pr,omitempty"`
 	JiraTransitionedDone bool        `json:"jira_transitioned_done,omitempty"`
 }
 

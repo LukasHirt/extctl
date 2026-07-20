@@ -47,6 +47,61 @@ var buildTools = []string{
 	"Bash(git rm -f *)",
 }
 
+// Rebase-repair tool allowlist: narrower than buildTools. Resolving a rebase
+// conflict only requires editing conflicted files, staging them, and
+// continuing the rebase — no build/lint/test/commit access, and no
+// `git rebase --abort` (only the orchestrator decides to abort and retry, so
+// it can tell a genuinely finished rebase apart from an abandoned one).
+var rebaseTools = []string{
+	"Read", "Edit", "Grep", "Glob",
+	"Bash(git status)", "Bash(git diff *)", "Bash(git add *)",
+	"Bash(git rebase --continue)", "Bash(pnpm install *)",
+}
+
+// RepairRebase runs a single attempt at resolving an in-progress rebase
+// conflict against origin/<defaultBranch>, using the rebase-repair prompt.
+// attempt is 1-indexed and used to name the output file
+// (rebase-repair-1.jsonl, rebase-repair-2.jsonl, …). Each attempt starts a
+// fresh Claude session — the caller aborts and restarts the rebase between
+// attempts, so there is no prior session state worth resuming.
+func RepairRebase(opts Options, defaultBranch string, attempt int) (*RunResult, error) {
+	promptPath := opts.Config.Prompts.RebaseRepair
+	promptBytes, err := os.ReadFile(promptPath)
+	if err != nil {
+		return nil, fmt.Errorf("read rebase-repair prompt %s: %w", promptPath, err)
+	}
+	prompt := renderTemplate(string(promptBytes), map[string]string{
+		"{{EXT_ID}}":         opts.CandidateID,
+		"{{DEFAULT_BRANCH}}": defaultBranch,
+	})
+
+	outputFile := filepath.Join(opts.Config.RunsDir, opts.Date, opts.CandidateID,
+		fmt.Sprintf("rebase-repair-%d.jsonl", attempt))
+
+	claudeOpts := claude.RunOptions{
+		Prompt:       prompt,
+		AllowedTools: rebaseTools,
+		Model:        opts.Config.Claude.VersionPin,
+		WorkDir:      opts.WorktreePath,
+		OutputFile:   outputFile,
+	}
+
+	opts.logf("build: running rebase-repair attempt %d…\n", attempt)
+
+	result, err := claude.Run(claudeOpts)
+	if err != nil {
+		return nil, fmt.Errorf("claude rebase-repair run: %w", err)
+	}
+
+	return &RunResult{
+		SessionID: result.SessionID,
+		CostUSD:   result.TotalCostUSD,
+		Turns:     result.NumTurns,
+		Attempts:  1,
+		Success:   true,
+	}, nil
+}
+
 // Repair runs a single repair attempt on gate failure using the same Claude session.
 // attempt is 1-indexed and is used to name the output file (repair-1.jsonl, repair-2.jsonl, …).
 func Repair(opts Options, gateLog string, sessionID string, attempt int) (*RunResult, error) {

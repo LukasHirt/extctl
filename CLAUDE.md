@@ -95,8 +95,26 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
   `dev/docker/ocis.apps.yaml`, and `support/actions/ocis.apps.yaml` — no
   user action required. Claude then runs `build-stage.md` per stage, the gate
   runs after each stage, and on full pass the branch is pushed and a GitHub PR
-  is opened. State progresses through `building` → `gated` → `publishing` →
-  `done`.
+  is opened. State progresses through `building` → `gated` → `rebasing`
+  (only when needed) → `publishing` → `done`.
+
+  Once the gate passes, and before pushing, extctl fetches origin and rebases
+  the build's branch onto the current tip of `origin/<default_branch>` — a
+  build can run for a long time (gate retries, human review pauses between
+  plan/stages/build), so `origin/<default_branch>` may have moved on since the
+  worktree was created, and pushing without rebasing risks opening a PR with
+  conflicts against the current base. On a clean rebase nothing else happens.
+  On a conflict (most commonly two candidates independently adding their own
+  entry to the same shared registration file), a scoped Claude invocation
+  (`rebase-repair.md`) resolves it — see `internal/poll/poll.go`'s
+  `rebaseOntoDefault`. It gets only enough tool access to edit conflicted
+  files, stage them, and run `git rebase --continue`; it cannot run
+  `git rebase --abort` itself, so the orchestrator (not Claude) always decides
+  whether an attempt succeeded or needs to be aborted and retried. After a
+  successful conflict resolution the gate is re-run once against the rebased
+  tree before push, to verify the resolution didn't break anything. Exhausting
+  `claude.max_rebase_attempts` (default 2), or a gate failure after rebasing,
+  falls back to the same blocked-draft-PR path as gate-repair exhaustion.
 
   The gate (`gate/run-gate.sh`) runs five stages: hygiene, build, lint, unit,
   and e2e. The e2e stage is an **orchestrator** action (not part of the
@@ -183,6 +201,12 @@ allowlists by prompt:
   Bash(pnpm test:unit *),Bash(pnpm lint *),Bash(pnpm check:types),
   Bash(git add *),Bash(git commit *),Bash(git status),Bash(git diff *),
   Bash(git rm -f *)`
+- Rebase-conflict repair (`rebase-repair.md`) — narrower than build/repair:
+  `Read,Grep,Glob,Edit,Bash(git status),Bash(git diff *),Bash(git add *),
+  Bash(git rebase --continue),Bash(pnpm install *)`. No `git commit` (rebase
+  carries the original commits forward, nothing new to commit) and no
+  `git rebase --abort` — only the orchestrator aborts, so it can always tell a
+  finished rebase apart from one Claude gave up on mid-conflict.
 
   Package scripts: each `packages/web-app-*` only defines `build`, `build:w`,
   `check:types`, `test:unit`, `test:e2e` — there is no per-package `test` or
