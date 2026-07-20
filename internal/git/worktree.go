@@ -59,6 +59,45 @@ func PushBranch(repoPath, branch string) error {
 	return run(repoPath, "push", "-u", "origin", branch)
 }
 
+// RebaseOntoOrigin rebases the branch checked out at worktreePath onto
+// origin/<defaultBranch>. It distinguishes a conflict stop (conflict=true,
+// err=nil — the caller must resolve and continue, or abort) from an
+// unexpected git failure (err set).
+func RebaseOntoOrigin(worktreePath, defaultBranch string) (conflict bool, err error) {
+	cmd := exec.Command("git", "-C", worktreePath, "rebase", "origin/"+defaultBranch)
+	out, runErr := cmd.CombinedOutput()
+	if runErr == nil {
+		return false, nil
+	}
+	if strings.Contains(string(out), "CONFLICT") {
+		return true, nil
+	}
+	return false, fmt.Errorf("git rebase origin/%s: %w\n%s", defaultBranch, runErr, strings.TrimSpace(string(out)))
+}
+
+// RebaseAbort aborts an in-progress rebase, restoring the branch to its
+// pre-rebase state.
+func RebaseAbort(worktreePath string) error {
+	return run(worktreePath, "rebase", "--abort")
+}
+
+// InRebase reports whether worktreePath currently has a rebase in progress.
+func InRebase(worktreePath string) bool {
+	out, err := exec.Command("git", "-C", worktreePath, "rev-parse", "--git-dir").Output()
+	if err != nil {
+		return false
+	}
+	gitDir := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(worktreePath, gitDir)
+	}
+	if _, err := os.Stat(filepath.Join(gitDir, "rebase-merge")); err == nil {
+		return true
+	}
+	_, err = os.Stat(filepath.Join(gitDir, "rebase-apply"))
+	return err == nil
+}
+
 func run(repoPath string, args ...string) error {
 	cmd := exec.Command("git", append([]string{"-C", repoPath}, args...)...)
 	out, err := cmd.CombinedOutput()

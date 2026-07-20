@@ -28,6 +28,7 @@ jira:
 claude:
   version_pin: '' # e.g. "2.1.0"; empty = use whatever is installed
   max_repair_attempts: 3  # gate → repair loop retries before giving up
+  max_rebase_attempts: 2  # rebase-conflict-repair retries before falling back to a blocked draft PR
   budget_usd_per_build: 8
   budget_usd_per_day: 20
 
@@ -52,6 +53,7 @@ prompts:
   build_stage: 'prompts/build-stage.md'
   build_summary: 'prompts/build-summary.md'
   repair: 'prompts/repair.md'
+  rebase_repair: 'prompts/rebase-repair.md'
   revise: 'prompts/revise.md'
 
 idea_pool: 'idea-pool.yaml'

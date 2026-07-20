@@ -13,8 +13,8 @@ import (
 	"github.com/LukasHirt/extctl/internal/build"
 	"github.com/LukasHirt/extctl/internal/config"
 	"github.com/LukasHirt/extctl/internal/gate"
-	githubpkg "github.com/LukasHirt/extctl/internal/github"
 	gitpkg "github.com/LukasHirt/extctl/internal/git"
+	githubpkg "github.com/LukasHirt/extctl/internal/github"
 	"github.com/LukasHirt/extctl/internal/jira"
 	"github.com/LukasHirt/extctl/internal/media"
 	"github.com/LukasHirt/extctl/internal/state"
@@ -310,7 +310,7 @@ func runBuild(opts Options, date string, candidate state.Candidate, jiraClient *
 		case build.PhaseGated:
 			logf("build: gate already passed; going to publish\n")
 			return publish(opts, date, candidate, bs, false, jiraClient, worktreeMu)
-		case build.PhaseGating, build.PhaseRepairing:
+		case build.PhaseGating, build.PhaseRepairing, build.PhaseRebasing:
 			worktreePath := filepath.Join(runsDir, date, candidate.ID, "worktree")
 			outputDir := filepath.Join(runsDir, date, candidate.ID)
 			logf("build: resuming from %s (session %s, attempts %d)…\n", bs.Phase, bs.SessionID, bs.Attempts)
@@ -462,7 +462,121 @@ func gateRepairPublish(opts Options, date string, candidate state.Candidate, bs 
 	bs.Phase = build.PhaseGated
 	_ = build.SaveState(runsDir, bs)
 
+	ok, err := rebaseOntoDefault(opts, date, candidate, bs, worktreePath, outputDir, gateResult, jiraClient, worktreeMu)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil // rebaseOntoDefault already published a blocked PR
+	}
+
 	return publish(opts, date, candidate, bs, false, jiraClient, worktreeMu)
+}
+
+// rebaseOntoDefault fetches and rebases the build's branch onto the current
+// tip of origin/<default branch> before push, so a long-running build (gate
+// retries, human review pauses between plan/stages/build) doesn't open a PR
+// against a base that has already moved on. On conflict, a scoped Claude
+// invocation resolves it; if that can't complete within the attempt cap, the
+// build falls back to a blocked draft PR for manual review — same as gate
+// exhaustion. Returns ok=false when it has already published a blocked PR
+// itself (the caller should just return nil in that case).
+func rebaseOntoDefault(opts Options, date string, candidate state.Candidate, bs *build.State, worktreePath, outputDir string, gateResult *gate.Result, jiraClient *jira.Client, worktreeMu *sync.Mutex) (bool, error) {
+	runsDir := opts.Config.RunsDir
+	repoPath := opts.Config.TargetRepo.Checkout
+	defaultBranch := opts.Config.DefaultBranch
+	logf := func(format string, args ...any) {
+		fmt.Printf("["+candidate.ID+"] "+format, args...)
+	}
+
+	logf("build: fetching origin before rebase…\n")
+	worktreeMu.Lock()
+	fetchErr := gitpkg.FetchOrigin(repoPath)
+	worktreeMu.Unlock()
+	if fetchErr != nil {
+		return false, fmt.Errorf("fetch origin before rebase: %w", fetchErr)
+	}
+
+	conflict, err := gitpkg.RebaseOntoOrigin(worktreePath, defaultBranch)
+	if err != nil {
+		return false, fmt.Errorf("rebase onto origin/%s: %w", defaultBranch, err)
+	}
+
+	maxAttempts := opts.Config.Claude.MaxRebaseAttempts
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+
+	for conflict {
+		if bs.RebaseAttempts >= maxAttempts {
+			_ = gitpkg.RebaseAbort(worktreePath)
+			return false, publishBlocked(opts, date, candidate, bs, gateResult, outputDir, jiraClient,
+				fmt.Sprintf("could not rebase onto origin/%s after %d attempt(s) — resolve conflicts manually", defaultBranch, bs.RebaseAttempts))
+		}
+
+		logf("build: rebase conflict onto origin/%s (attempt %d/%d); resolving…\n",
+			defaultBranch, bs.RebaseAttempts+1, maxAttempts)
+		bs.Phase = build.PhaseRebasing
+		_ = build.SaveState(runsDir, bs)
+
+		result, repairErr := build.RepairRebase(build.Options{
+			Config:       opts.Config,
+			CandidateID:  candidate.ID,
+			JiraKey:      candidate.JiraKey,
+			SpecMD:       candidate.SpecMD,
+			Effort:       candidate.Effort,
+			Date:         date,
+			WorktreePath: worktreePath,
+			LogPrefix:    "[" + candidate.ID + "] ",
+		}, defaultBranch, bs.RebaseAttempts+1)
+
+		bs.RebaseAttempts++
+		if repairErr != nil {
+			logf("build: rebase-repair attempt %d errored: %v\n", bs.RebaseAttempts, repairErr)
+			_ = build.SaveState(runsDir, bs)
+		} else {
+			bs.CostUSD += result.CostUSD
+			bs.Turns += result.Turns
+			_ = build.SaveState(runsDir, bs)
+		}
+
+		if repairErr == nil && !gitpkg.InRebase(worktreePath) {
+			break
+		}
+
+		// Claude didn't finish (errored, or left the rebase mid-conflict) — abort
+		// and restart the rebase from scratch for the next attempt rather than
+		// resuming a half-resolved state a fresh Claude session never saw.
+		logf("build: rebase still unresolved after attempt %d; aborting and retrying\n", bs.RebaseAttempts)
+		_ = gitpkg.RebaseAbort(worktreePath)
+		conflict, err = gitpkg.RebaseOntoOrigin(worktreePath, defaultBranch)
+		if err != nil {
+			return false, fmt.Errorf("retry rebase onto origin/%s: %w", defaultBranch, err)
+		}
+	}
+
+	if bs.RebaseAttempts == 0 {
+		logf("build: rebased cleanly onto origin/%s\n", defaultBranch)
+		return true, nil
+	}
+
+	// Conflicts were resolved by editing tracked files — re-verify the gate
+	// against the rebased tree before trusting the result.
+	logf("build: rebase onto origin/%s complete; re-verifying gate…\n", defaultBranch)
+	newGateResult, err := runGate(opts, worktreePath, candidate.ID, outputDir, candidate.SpecMD)
+	if err != nil {
+		return false, fmt.Errorf("re-gate after rebase: %w", err)
+	}
+	bs.Gate = toStateGate(newGateResult)
+	_ = build.SaveState(runsDir, bs)
+	if !newGateResult.Passed {
+		return false, publishBlocked(opts, date, candidate, bs, newGateResult, outputDir, jiraClient,
+			"gate failed after rebasing onto origin/"+defaultBranch)
+	}
+
+	bs.Phase = build.PhaseGated
+	_ = build.SaveState(runsDir, bs)
+	return true, nil
 }
 
 // publish pushes the branch and opens a ready-for-review PR.

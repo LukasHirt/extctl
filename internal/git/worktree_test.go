@@ -44,6 +44,16 @@ func initBareRemote(t *testing.T) string {
 	return dir
 }
 
+// configureIdentity sets a local commit identity for a freshly-cloned repo.
+// Unlike initRepo's repos, a plain `git clone` starts with no local git
+// config and can't rely on a global one being present — CI runners have
+// none, so committing without this fails with "Please tell me who you are".
+func configureIdentity(t *testing.T, dir string) {
+	t.Helper()
+	mustGit(t, dir, "config", "user.email", "test@test.com")
+	mustGit(t, dir, "config", "user.name", "Test")
+}
+
 func TestCreateWorktree_New(t *testing.T) {
 	repo := initRepo(t)
 	commitFile(t, repo, "a.txt", "init", "initial commit")
@@ -171,6 +181,94 @@ func TestFetchOrigin(t *testing.T) {
 	// Should not error — remote is empty but accessible.
 	if err := FetchOrigin(repo); err != nil {
 		t.Fatalf("FetchOrigin: %v", err)
+	}
+}
+
+func TestRebaseOntoOrigin_Clean(t *testing.T) {
+	remote := initBareRemote(t)
+	repo := initRepo(t)
+	commitFile(t, repo, "base.txt", "base", "initial commit")
+	mustGit(t, repo, "remote", "add", "origin", remote)
+	base := defaultBranch(t, repo)
+	mustGit(t, repo, "push", "origin", base)
+
+	worktreePath := filepath.Join(t.TempDir(), "wt")
+	if err := CreateWorktree(repo, worktreePath, "feature/clean", base); err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+	commitFile(t, worktreePath, "feature.txt", "feature", "feat: add feature")
+
+	// Advance origin/<base> independently, simulating another candidate's PR
+	// merging while this build was still in progress.
+	otherClone := filepath.Join(t.TempDir(), "other")
+	mustGit(t, t.TempDir(), "clone", remote, otherClone)
+	configureIdentity(t, otherClone)
+	commitFile(t, otherClone, "other.txt", "other", "other: unrelated change")
+	mustGit(t, otherClone, "push", "origin", base)
+
+	mustGit(t, repo, "fetch", "origin")
+
+	conflict, err := RebaseOntoOrigin(worktreePath, base)
+	if err != nil {
+		t.Fatalf("RebaseOntoOrigin: %v", err)
+	}
+	if conflict {
+		t.Fatal("expected a clean rebase, got a conflict")
+	}
+	if InRebase(worktreePath) {
+		t.Error("InRebase should be false after a clean rebase")
+	}
+	if _, err := os.Stat(filepath.Join(worktreePath, "other.txt")); err != nil {
+		t.Errorf("expected other.txt to be present after rebasing onto the advanced origin: %v", err)
+	}
+}
+
+func TestRebaseOntoOrigin_ConflictThenAbort(t *testing.T) {
+	remote := initBareRemote(t)
+	repo := initRepo(t)
+	commitFile(t, repo, "shared.txt", "base", "initial commit")
+	mustGit(t, repo, "remote", "add", "origin", remote)
+	base := defaultBranch(t, repo)
+	mustGit(t, repo, "push", "origin", base)
+
+	worktreePath := filepath.Join(t.TempDir(), "wt")
+	if err := CreateWorktree(repo, worktreePath, "feature/conflict", base); err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+	commitFile(t, worktreePath, "shared.txt", "feature version", "feat: change shared file")
+
+	// Another candidate's PR merges the same file independently.
+	otherClone := filepath.Join(t.TempDir(), "other")
+	mustGit(t, t.TempDir(), "clone", remote, otherClone)
+	configureIdentity(t, otherClone)
+	commitFile(t, otherClone, "shared.txt", "other version", "other: change shared file")
+	mustGit(t, otherClone, "push", "origin", base)
+
+	mustGit(t, repo, "fetch", "origin")
+
+	conflict, err := RebaseOntoOrigin(worktreePath, base)
+	if err != nil {
+		t.Fatalf("RebaseOntoOrigin: %v", err)
+	}
+	if !conflict {
+		t.Fatal("expected a conflict, got a clean rebase")
+	}
+	if !InRebase(worktreePath) {
+		t.Error("InRebase should be true while a conflicted rebase is in progress")
+	}
+
+	if err := RebaseAbort(worktreePath); err != nil {
+		t.Fatalf("RebaseAbort: %v", err)
+	}
+	if InRebase(worktreePath) {
+		t.Error("InRebase should be false after RebaseAbort")
+	}
+	data, err := os.ReadFile(filepath.Join(worktreePath, "shared.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "feature version" {
+		t.Errorf("expected shared.txt restored to pre-rebase content %q, got %q", "feature version", data)
 	}
 }
 
