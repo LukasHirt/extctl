@@ -19,10 +19,10 @@ type Config struct {
 	Decay                 Decay      `yaml:"decay"`
 	Prompts               Prompts    `yaml:"prompts"`
 	Media                 Media      `yaml:"media"`
-	IdeaPool      string `yaml:"idea_pool"`
-	RunsDir       string `yaml:"runs_dir"`
-	DeliveredYAML string `yaml:"delivered_yaml"`
-	ScaffoldDir   string `yaml:"scaffold_dir"`
+	IdeaPool              string     `yaml:"idea_pool"`
+	RunsDir               string     `yaml:"runs_dir"`
+	DeliveredYAML         string     `yaml:"delivered_yaml"`
+	ScaffoldDir           string     `yaml:"scaffold_dir"`
 }
 
 type TargetRepo struct {
@@ -36,7 +36,7 @@ type Jira struct {
 	CandidateStatus string `yaml:"candidate_status"`
 	PickStatus      string `yaml:"pick_status"`
 	DeclineStatus   string `yaml:"decline_status"`
-	BuildStatus string `yaml:"build_status"` // status to set when the PR is merged
+	BuildStatus     string `yaml:"build_status"` // status to set when the PR is merged
 	PollIntervalMin int    `yaml:"poll_interval_min"`
 	// Token read from EXTCTL_JIRA_TOKEN env var, not stored in config file
 }
@@ -81,6 +81,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.DefaultBranch == "" {
 		c.DefaultBranch = "main"
+	}
+	if c.TargetRepo.Checkout == "" {
+		c.TargetRepo.Checkout = ".extctl-checkout"
 	}
 	if c.Jira.CandidateStatus == "" {
 		c.Jira.CandidateStatus = "Needs Approval"
@@ -253,6 +256,14 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("resolve runs_dir: %w", err)
 	}
 	cfg.RunsDir = absRunsDir
+	// TargetRepo.Checkout must be absolute for the same reason, and because
+	// EnsureCheckout resolves it once at startup regardless of which directory
+	// each subsequent Claude/git invocation runs from.
+	absCheckout, err := filepath.Abs(cfg.TargetRepo.Checkout)
+	if err != nil {
+		return nil, fmt.Errorf("resolve target_repo.checkout: %w", err)
+	}
+	cfg.TargetRepo.Checkout = absCheckout
 	return &cfg, nil
 }
 
