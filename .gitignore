@@ -10,6 +10,9 @@ extctl.yaml
 runs/20*/
 runs/delivered.yaml
 
+# Auto-provisioned target repo checkout (see target_repo.checkout)
+/.extctl-checkout/
+
 # OS
 .DS_Store
 Thumbs.db

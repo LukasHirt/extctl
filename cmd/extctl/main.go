@@ -46,6 +46,18 @@ var rootCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
+
+		// Only the commands that actually touch the target repo need its
+		// checkout provisioned. slate/stats/version never read it.
+		needsCheckout := map[string]bool{
+			"gen": true, "poll": true, "gate": true,
+			"approve-plan": true, "approve-stages": true, "release": true,
+		}
+		if needsCheckout[cmd.Name()] {
+			if err := gitpkg.EnsureCheckout(cfg.TargetRepo.Remote, cfg.TargetRepo.Checkout, cfg.DefaultBranch); err != nil {
+				return fmt.Errorf("ensure target repo checkout: %w", err)
+			}
+		}
 		return nil
 	},
 }

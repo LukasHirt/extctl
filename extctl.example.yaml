@@ -11,7 +11,12 @@ fresh_candidates_per_day: 3 # always 3; not configurable per the ownCloud agreem
 
 target_repo:
   remote: owncloud/web-extensions # GitHub repo for PRs
-  checkout: '../web-extensions' # local path to the checkout
+  # Fixed local path extctl owns exclusively — never point this at a checkout
+  # you work in yourself. If nothing exists here yet, extctl clones it (via
+  # `gh repo clone`); on every subsequent run it fetches and hard-resets it
+  # onto origin/<default_branch>. This is the default — override only if you
+  # want the checkout somewhere other than the extctl working directory.
+  checkout: '.extctl-checkout'
 
 default_branch: main
 

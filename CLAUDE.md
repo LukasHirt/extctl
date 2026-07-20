@@ -54,6 +54,16 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
   `EXTCTL_JIRA_TOKEN` env vars. Never Bearer, never hardcoded.
 - **Config file:** `extctl.yaml` in the working directory (gitignored).
   `extctl.example.yaml` is the committed template.
+- **Target repo checkout:** `target_repo.checkout` is a fixed local path
+  extctl owns exclusively — never a checkout a developer works in by hand.
+  Every command that touches it (`gen`, `poll`, `gate`, `approve-plan`,
+  `approve-stages`, `release`) calls `git.EnsureCheckout` from
+  `PersistentPreRunE` in `cmd/extctl/main.go` first: clones it via
+  `gh repo clone` if the path has no `.git` yet, otherwise fetches and
+  hard-resets it onto `origin/<default_branch>`. Because extctl is the only
+  writer, a hard reset there is always safe. Defaults to `./.extctl-checkout`
+  if unset. Must be a real (non-bare) working tree, not just a `.git` object
+  store — the gate's e2e stage runs `docker compose` directly inside it.
 
 ## What's already working
 

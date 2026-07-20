@@ -84,6 +84,9 @@ func (c *Config) applyDefaults() {
 	if c.DefaultBranch == "" {
 		c.DefaultBranch = "main"
 	}
+	if c.TargetRepo.Checkout == "" {
+		c.TargetRepo.Checkout = ".extctl-checkout"
+	}
 	if c.Jira.CandidateStatus == "" {
 		c.Jira.CandidateStatus = "Needs Approval"
 	}
@@ -261,6 +264,14 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("resolve runs_dir: %w", err)
 	}
 	cfg.RunsDir = absRunsDir
+	// TargetRepo.Checkout must be absolute for the same reason, and because
+	// EnsureCheckout resolves it once at startup regardless of which directory
+	// each subsequent Claude/git invocation runs from.
+	absCheckout, err := filepath.Abs(cfg.TargetRepo.Checkout)
+	if err != nil {
+		return nil, fmt.Errorf("resolve target_repo.checkout: %w", err)
+	}
+	cfg.TargetRepo.Checkout = absCheckout
 	return &cfg, nil
 }
 
