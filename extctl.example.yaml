@@ -14,8 +14,9 @@ target_repo:
   # Fixed local path extctl owns exclusively — never point this at a checkout
   # you work in yourself. If nothing exists here yet, extctl clones it (via
   # `gh repo clone`); on every subsequent run it fetches and hard-resets it
-  # onto origin/<default_branch>. Defaults to './.extctl-checkout' if unset.
-  checkout: '../web-extensions'
+  # onto origin/<default_branch>. This is the default — override only if you
+  # want the checkout somewhere other than the extctl working directory.
+  checkout: '.extctl-checkout'
 
 default_branch: main
 
