@@ -11,6 +11,7 @@ func TestEnsureCheckout_ClonesWhenMissing(t *testing.T) {
 	remote := initBareRemote(t)
 	seed := filepath.Join(t.TempDir(), "seed")
 	mustGit(t, t.TempDir(), "clone", remote, seed)
+	configureIdentity(t, seed)
 	commitFile(t, seed, "a.txt", "init", "initial commit")
 	base := defaultBranch(t, seed)
 	mustGit(t, seed, "push", "origin", base)
@@ -49,6 +50,7 @@ func TestEnsureCheckout_FetchesAndResetsWhenPresent(t *testing.T) {
 	// Advance origin independently, as if another process/PR moved it on.
 	otherClone := filepath.Join(t.TempDir(), "other")
 	mustGit(t, t.TempDir(), "clone", remote, otherClone)
+	configureIdentity(t, otherClone)
 	commitFile(t, otherClone, "b.txt", "remote", "remote: advance origin")
 	mustGit(t, otherClone, "push", "origin", base)
 
