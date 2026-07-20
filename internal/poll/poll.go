@@ -541,7 +541,6 @@ func rebaseOntoDefault(opts Options, date string, candidate state.Candidate, bs 
 		}
 
 		if repairErr == nil && !gitpkg.InRebase(worktreePath) {
-			conflict = false
 			break
 		}
 

@@ -44,6 +44,16 @@ func initBareRemote(t *testing.T) string {
 	return dir
 }
 
+// configureIdentity sets a local commit identity for a freshly-cloned repo.
+// Unlike initRepo's repos, a plain `git clone` starts with no local git
+// config and can't rely on a global one being present — CI runners have
+// none, so committing without this fails with "Please tell me who you are".
+func configureIdentity(t *testing.T, dir string) {
+	t.Helper()
+	mustGit(t, dir, "config", "user.email", "test@test.com")
+	mustGit(t, dir, "config", "user.name", "Test")
+}
+
 func TestCreateWorktree_New(t *testing.T) {
 	repo := initRepo(t)
 	commitFile(t, repo, "a.txt", "init", "initial commit")
@@ -192,6 +202,7 @@ func TestRebaseOntoOrigin_Clean(t *testing.T) {
 	// merging while this build was still in progress.
 	otherClone := filepath.Join(t.TempDir(), "other")
 	mustGit(t, t.TempDir(), "clone", remote, otherClone)
+	configureIdentity(t, otherClone)
 	commitFile(t, otherClone, "other.txt", "other", "other: unrelated change")
 	mustGit(t, otherClone, "push", "origin", base)
 
@@ -229,6 +240,7 @@ func TestRebaseOntoOrigin_ConflictThenAbort(t *testing.T) {
 	// Another candidate's PR merges the same file independently.
 	otherClone := filepath.Join(t.TempDir(), "other")
 	mustGit(t, t.TempDir(), "clone", remote, otherClone)
+	configureIdentity(t, otherClone)
 	commitFile(t, otherClone, "shared.txt", "other version", "other: change shared file")
 	mustGit(t, otherClone, "push", "origin", base)
 
