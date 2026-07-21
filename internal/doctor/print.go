@@ -12,10 +12,10 @@ func Print(r *Report, w io.Writer) {
 	var lastSection Section
 	for _, f := range r.Findings {
 		if f.Section != lastSection {
-			fmt.Fprintf(w, "\n%s\n", f.Section)
+			_, _ = fmt.Fprintf(w, "\n%s\n", f.Section)
 			lastSection = f.Section
 		}
-		fmt.Fprintf(w, "  [%-5s] %s\n", f.Severity, f.Message)
+		_, _ = fmt.Fprintf(w, "  [%-5s] %s\n", f.Severity, f.Message)
 		switch f.Severity {
 		case ERROR:
 			errCount++
@@ -23,10 +23,10 @@ func Print(r *Report, w io.Writer) {
 			warnCount++
 		}
 	}
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 	if errCount > 0 {
-		fmt.Fprintf(w, "FAIL — %d error(s), %d warning(s)\n", errCount, warnCount)
+		_, _ = fmt.Fprintf(w, "FAIL — %d error(s), %d warning(s)\n", errCount, warnCount)
 	} else {
-		fmt.Fprintf(w, "PASS — %d warning(s)\n", warnCount)
+		_, _ = fmt.Fprintf(w, "PASS — %d warning(s)\n", warnCount)
 	}
 }
