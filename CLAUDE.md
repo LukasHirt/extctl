@@ -166,6 +166,18 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
   **COST**: total spend, avg and highest per-build cost, budget utilization
   (`BudgetUSDPerBuild × builds` in window). Reads `runs/*/slate.json` via
   `state.LoadAll` and `runs/*/*/state.json` via `build.LoadAllStates`.
+- `extctl doctor` — read-only health check of the local installation: parses
+  `extctl.yaml` and flags unknown/unsupported keys (derived via reflection
+  over `config.Config`'s yaml tags, so it can't drift out of sync with the
+  struct), flags required-but-empty fields (`jira.base_url`, `jira.project`,
+  `target_repo.remote`), confirms `EXTCTL_JIRA_EMAIL`/`EXTCTL_JIRA_TOKEN` are
+  set, confirms `git`/`gh`/`claude`/`docker`/`pnpm` (and `ffmpeg` if
+  `media.enabled`) are on PATH, confirms referenced paths (prompt files,
+  `idea_pool`, `scaffold_dir`) exist, and reports the shape of
+  `target_repo.checkout`. Makes no network calls and never mutates anything
+  (does not call `git.EnsureCheckout`) — safe to run any time, including with
+  a missing or broken `extctl.yaml`. Exits non-zero if any error-level finding
+  exists. Logic lives in `internal/doctor/`.
 
 ## What's next (in priority order)
 

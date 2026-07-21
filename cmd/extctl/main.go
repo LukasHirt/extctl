@@ -11,6 +11,7 @@ import (
 
 	"github.com/LukasHirt/extctl/internal/build"
 	"github.com/LukasHirt/extctl/internal/config"
+	"github.com/LukasHirt/extctl/internal/doctor"
 	"github.com/LukasHirt/extctl/internal/gate"
 	"github.com/LukasHirt/extctl/internal/gen"
 	gitpkg "github.com/LukasHirt/extctl/internal/git"
@@ -37,8 +38,10 @@ var rootCmd = &cobra.Command{
   - builds the picked candidate into a GitHub PR`,
 	SilenceUsage: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Skip config loading for commands that don't need it.
-		if cmd.Name() == "version" || cmd.Name() == "help" {
+		// Skip config loading for commands that don't need it. doctor does
+		// its own tolerant config loading so it can report a broken/missing
+		// extctl.yaml as a finding instead of hard-failing here.
+		if cmd.Name() == "version" || cmd.Name() == "help" || cmd.Name() == "doctor" {
 			return nil
 		}
 		var err error
@@ -793,6 +796,28 @@ the target repo's git (user.signingkey).`,
 	},
 }
 
+// --- doctor command ---
+
+var doctorCmd = &cobra.Command{
+	Use:   "doctor",
+	Short: "Check the health of the local extctl installation",
+	Long: `doctor checks extctl.yaml for validity and unsupported keys, required
+secrets, required external tooling (git, gh, claude, docker, pnpm — plus
+ffmpeg if media capture is enabled), referenced prompt/idea-pool/scaffold
+paths, and the shape of the target repo checkout. It makes no network calls
+and never mutates anything (it does not run "gh repo clone" or touch the
+checkout) — safe to run at any time, including with a missing or broken
+extctl.yaml.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		report := doctor.Run(cfgFile)
+		doctor.Print(report, os.Stdout)
+		if report.HasErrors() {
+			os.Exit(1)
+		}
+		return nil
+	},
+}
+
 // --- version command ---
 
 var version = "dev"
@@ -836,7 +861,7 @@ func init() {
 		"number of days of history to include in pipeline and cost sections")
 
 	slateCmd.AddCommand(slateStatusCmd, slateCarryoversCmd)
-	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, approvePlanCmd, approveStagesCmd, releaseCmd, statsCmd, versionCmd)
+	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, approvePlanCmd, approveStagesCmd, releaseCmd, statsCmd, versionCmd, doctorCmd)
 }
 
 func main() {
