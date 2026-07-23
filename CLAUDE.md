@@ -187,6 +187,22 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
   after the run; a copy is kept alongside `playwright.log`/`e2e-report.json`
   in the review dir if capture comes up with zero screenshots).
 
+  Before `GenerateScreenshotSpec` runs, `pinExtensionSourceToRelease`
+  (`pin_release.go`) switches `packages/web-app-<appID>` in
+  `target_repo.checkout` to the exact tree it had at the release tag being
+  published (`git checkout <tag> -- <path>`, restored back to `HEAD` once
+  capture is done) — scoped to that one path, nothing else in the checkout
+  moves. Without this, Claude reads whatever the default branch currently
+  looks like to pick selectors, while `PreparePlaywrightRun` serves the
+  OLD release's built `dist/` to Playwright — for any release the source has
+  since moved past (a renamed class, a component swapped for a
+  design-system one), every selector Claude writes targets markup that
+  release never had, and no number of fix-and-rerun cycles (inner OR outer,
+  see `captureScreenshotsWithRetry` below) can converge, since the bug is
+  the version skew itself. Best-effort like the rest of this path: a fetch
+  or checkout failure is logged and capture proceeds anyway rather than
+  aborting the submission.
+
   `prepareOCISForCapture` brings up a fresh oCIS stack (full `docker compose
   down`+`up -d`, not `restart` — see `freshOCISUp`'s doc comment) with the
   released `dist/` staged in, installs dependencies (`pnpm install

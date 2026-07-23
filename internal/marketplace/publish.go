@@ -170,6 +170,22 @@ func captureScreenshotsWithRetry(cfg *config.Config, r Result, bundlePath, revie
 		return nil, nil
 	}
 
+	// Pinned once for every attempt below — all of them target the same
+	// release (r.Tag), so the source only needs to move and move back once,
+	// not per attempt. See pinExtensionSourceToRelease's doc comment for why
+	// this matters: without it, Claude writes selectors against whatever the
+	// default branch looks like NOW, which for anything but the newest
+	// release routinely no longer matches the dist/ actually being served.
+	restoreExtensionSource, pinErr := pinExtensionSourceToRelease(cfg.TargetRepo.Checkout, r.AppID, r.Tag)
+	if pinErr != nil {
+		printf("  warning: could not pin extension source to %s — generated selectors may target markup this release doesn't have: %v\n", r.Tag, pinErr)
+	}
+	defer func() {
+		if err := restoreExtensionSource(); err != nil {
+			printf("  warning: could not restore extension source after screenshot capture: %v\n", err)
+		}
+	}()
+
 	reportPath := filepath.Join(reviewDir, "e2e-report.json")
 	logPath := filepath.Join(reviewDir, "playwright.log")
 

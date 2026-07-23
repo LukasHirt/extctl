@@ -50,3 +50,12 @@ func fastForward(checkoutPath, defaultBranch string) error {
 	}
 	return run(checkoutPath, "reset", "--hard", "origin/"+defaultBranch)
 }
+
+// CheckoutPath updates path's content, in both the index and working tree
+// of repoPath, to match ref — without moving HEAD or touching anything
+// else. `git checkout <ref> -- <path>` is scoped to exactly the given
+// pathspec, so this is safe to layer on top of EnsureCheckout's hard reset
+// and cheap to reverse (call again with ref="HEAD" to restore).
+func CheckoutPath(repoPath, ref, path string) error {
+	return run(repoPath, "checkout", ref, "--", path)
+}
