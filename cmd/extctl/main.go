@@ -17,6 +17,7 @@ import (
 	gitpkg "github.com/LukasHirt/extctl/internal/git"
 	githubpkg "github.com/LukasHirt/extctl/internal/github"
 	"github.com/LukasHirt/extctl/internal/jira"
+	"github.com/LukasHirt/extctl/internal/marketplace"
 	"github.com/LukasHirt/extctl/internal/media"
 	"github.com/LukasHirt/extctl/internal/poll"
 	"github.com/LukasHirt/extctl/internal/release"
@@ -55,10 +56,20 @@ var rootCmd = &cobra.Command{
 		needsCheckout := map[string]bool{
 			"gen": true, "poll": true, "gate": true,
 			"approve-plan": true, "approve-stages": true, "release": true,
+			"publish": true, "approve": true, "retry-screenshots": true,
 		}
 		if needsCheckout[cmd.Name()] {
 			if err := gitpkg.EnsureCheckout(cfg.TargetRepo.Remote, cfg.TargetRepo.Checkout, cfg.DefaultBranch); err != nil {
 				return fmt.Errorf("ensure target repo checkout: %w", err)
+			}
+		}
+		// publish and its approve/retry-screenshots subcommands are the only
+		// ones that also need a second repo checked out — they act on
+		// owncloud/marketplace, not TargetRepo.
+		needsMarketplaceCheckout := map[string]bool{"publish": true, "approve": true, "retry-screenshots": true}
+		if needsMarketplaceCheckout[cmd.Name()] {
+			if err := gitpkg.EnsureCheckout(cfg.MarketplaceRepo.Remote, cfg.MarketplaceRepo.Checkout, cfg.MarketplaceRepo.DefaultBranch); err != nil {
+				return fmt.Errorf("ensure marketplace repo checkout: %w", err)
 			}
 		}
 		return nil
@@ -796,6 +807,91 @@ the target repo's git (user.signingkey).`,
 	},
 }
 
+// --- publish command ---
+
+var (
+	publishDryRun bool
+	publishID     string
+)
+
+var publishCmd = &cobra.Command{
+	Use:   "publish",
+	Short: "Stage marketplace submissions for review (see also: approve, retry-screenshots)",
+	Long: `Scan owncloud/web-extensions GitHub Releases for extensions with a
+completed release that is not yet present in owncloud/marketplace, and for
+each one: download its release bundle, generate extension.yaml, have Claude
+write a fresh dedicated screenshot spec (never a reuse of acceptance.spec.ts,
+which optimizes for passing assertions, not looking good publicly) and
+capture screenshots from it via a live oCIS + Playwright run (best-effort —
+a submission still goes out without screenshots if capture fails), and
+commit the assembled submission to a local publish/<app-id>-v<version>
+branch under extensions/<app-id>/releases/<version>/ — but does NOT push or
+open a PR yet. Review the printed summary (open the screenshots it points
+at), then run:
+
+  extctl publish approve <app-id>            push the branch and open its PR
+  extctl publish retry-screenshots <app-id>   recapture screenshots and retry
+
+An extension whose package.json has no license field is skipped with a
+clear error rather than published with a guessed license. Tags and minOCIS
+are reused verbatim from this extension's most recent prior marketplace
+release when one exists; otherwise tags fall back to Claude inference from
+package.json/README (staged with no tags at all, flagged in the summary, if
+that also fails), and minOCIS falls back to the latest stable oCIS release
+that existed on or before the extension's first commit date (a heuristic,
+flagged in the summary; left unset if that turns up nothing either).`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		summary, err := marketplace.Run(marketplace.Options{
+			Config: cfg,
+			DryRun: publishDryRun,
+			OnlyID: publishID,
+		}, os.Stdout)
+		if summary != nil {
+			for _, f := range summary.Failed {
+				fmt.Printf("  ✗ %s@%s: %v\n", f.AppID, f.Version, f.Err)
+			}
+		}
+		return err
+	},
+}
+
+var publishApproveCmd = &cobra.Command{
+	Use:   "approve <app-id>[@<version>]",
+	Short: "Push a staged submission and open its marketplace PR",
+	Long: `Push the local publish/<app-id>-v<version> branch a prior "extctl
+publish" run committed, and open its PR against owncloud/marketplace.
+<app-id> alone works if exactly one version is staged for it; use
+<app-id>@<version> to disambiguate if more than one is pending. Idempotent —
+if the branch already has an open PR, prints its URL instead of erroring or
+opening a duplicate.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		prURL, err := marketplace.Approve(cfg, args[0], os.Stdout)
+		if err != nil {
+			return err
+		}
+		fmt.Println(prURL)
+		return nil
+	},
+}
+
+var publishRetryScreenshotsCmd = &cobra.Command{
+	Use:   "retry-screenshots <app-id>[@<version>]",
+	Short: "Regenerate and recapture screenshots for a staged submission",
+	Long: `Have Claude write a fresh screenshot spec (not a retry of the same
+one — observed capture failures have traced to content bugs in the
+generated spec, not environmental flakiness a same-spec retry would fix)
+and recapture screenshots for a submission a prior "extctl publish" run
+staged, reusing its already-downloaded bundle and already-resolved tags/
+minOCIS — no re-download, no new branch. The result is amended onto the
+existing commit. <app-id> alone works if exactly one version is staged for
+it; use <app-id>@<version> to disambiguate.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return marketplace.RetryScreenshots(cfg, args[0], os.Stdout)
+	},
+}
+
 // --- doctor command ---
 
 var doctorCmd = &cobra.Command{
@@ -857,11 +953,17 @@ func init() {
 	releaseCmd.Flags().BoolVar(&releaseDryRun, "dry-run", false,
 		"list merged-but-unreleased extensions without creating or pushing tags")
 
+	publishCmd.Flags().BoolVar(&publishDryRun, "dry-run", false,
+		"list extensions that would be staged without downloading, capturing screenshots, or committing anything")
+	publishCmd.Flags().StringVar(&publishID, "id", "",
+		"stage only this extension (app-id without the web-app- prefix, e.g. draw-io)")
+
 	statsCmd.Flags().IntVar(&statsDays, "days", 30,
 		"number of days of history to include in pipeline and cost sections")
 
 	slateCmd.AddCommand(slateStatusCmd, slateCarryoversCmd)
-	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, approvePlanCmd, approveStagesCmd, releaseCmd, statsCmd, versionCmd, doctorCmd)
+	publishCmd.AddCommand(publishApproveCmd, publishRetryScreenshotsCmd)
+	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, approvePlanCmd, approveStagesCmd, releaseCmd, publishCmd, statsCmd, versionCmd, doctorCmd)
 }
 
 func main() {

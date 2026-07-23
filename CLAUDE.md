@@ -108,56 +108,191 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
   is opened. State progresses through `building` → `gated` → `rebasing`
   (only when needed) → `publishing` → `done`.
 
-  Once the gate passes, and before pushing, extctl fetches origin and rebases
-  the build's branch onto the current tip of `origin/<default_branch>` — a
-  build can run for a long time (gate retries, human review pauses between
-  plan/stages/build), so `origin/<default_branch>` may have moved on since the
-  worktree was created, and pushing without rebasing risks opening a PR with
-  conflicts against the current base. On a clean rebase nothing else happens.
-  On a conflict (most commonly two candidates independently adding their own
-  entry to the same shared registration file), a scoped Claude invocation
-  (`rebase-repair.md`) resolves it — see `internal/poll/poll.go`'s
-  `rebaseOntoDefault`. It gets only enough tool access to edit conflicted
-  files, stage them, and run `git rebase --continue`; it cannot run
-  `git rebase --abort` itself, so the orchestrator (not Claude) always decides
-  whether an attempt succeeded or needs to be aborted and retried. After a
-  successful conflict resolution the gate is re-run once against the rebased
-  tree before push, to verify the resolution didn't break anything. Exhausting
-  `claude.max_rebase_attempts` (default 2), or a gate failure after rebasing,
-  falls back to the same blocked-draft-PR path as gate-repair exhaustion.
+  Once the gate passes, and before pushing, extctl rebases the build's branch
+  onto the current tip of `origin/<default_branch>` (a build can span gate
+  retries and human review pauses, so the base may have moved on). On a
+  conflict, a scoped Claude invocation (`rebase-repair.md`) resolves it — see
+  `internal/poll/poll.go`'s `rebaseOntoDefault`. It can edit conflicted files,
+  stage them, and run `git rebase --continue`, but never `git rebase --abort`
+  — only the orchestrator aborts, so it can always tell a finished rebase
+  apart from one Claude gave up on. The gate is re-run once against the
+  rebased tree before push. Exhausting `claude.max_rebase_attempts` (default
+  2), or a gate failure after rebasing, falls back to the same blocked-draft-PR
+  path as gate-repair exhaustion.
 
   The gate (`gate/run-gate.sh`) runs five stages: hygiene, build, lint, unit,
   and e2e. The e2e stage is an **orchestrator** action (not part of the
   sandboxed build-stage Claude invocation): it copies the built extension's
-  `dist/` into the running oCIS container (auto-discovered from `/web/apps/`),
-  restarts the container so oCIS picks up the new app, and runs the extension's
-  Playwright acceptance tests. It is skipped when no web-extensions checkout is
-  passed (the gate's optional 5th argument), and is serialized across
-  concurrently-built candidates via a lock so their Playwright sessions don't
-  collide on the shared admin user.
+  `dist/` into the running oCIS container, restarts it, and runs the
+  extension's Playwright acceptance tests. Skipped when no web-extensions
+  checkout is passed; serialized across concurrently-built candidates via a
+  lock so Playwright sessions don't collide on the shared admin user.
 
-  Before every gate invocation (initial and each repair retry), `gate.Run` in
-  `internal/gate/clean.go` runs `git status --porcelain` and, for anything
-  outside `packages/web-app-<id>/` and the allowlisted root files
-  (`pnpm-lock.yaml`, `docker-compose.yml`, `dev/docker/ocis.apps.yaml`,
-  `support/actions/ocis.apps.yaml`), deletes untracked stray files/dirs and
-  discards uncommitted edits to tracked ones. This is an orchestrator action —
-  the sandboxed build/repair Claude invocation has no way to clean up an
-  artifact it accidentally writes outside its own package directory, so
-  leaving that to the orchestrator prevents both a permanently-failing
-  hygiene stage and a repair session working around it by editing shared repo
-  config (e.g. root `.gitignore`) instead.
-- `extctl release` — scans the web-extensions checkout for extensions that have
-  been merged to the default branch (`packages/web-app-*` present on
-  `origin/<default_branch>`) but never released, and creates + pushes a signed
-  git tag `<app-id>-v<version>` (version read from each `package.json`) for each.
-  The GitHub Action in web-extensions picks up the pushed tag and builds the
-  release — extctl only pushes the tag. An extension counts as released once any
-  tag with prefix `<app-id>-v` exists, so the command is idempotent. Only the
-  newly created tags are pushed. `extctl release --dry-run` lists what would be
-  tagged without creating or pushing anything. Signed tags require a signing key
-  in the target repo's git config (`user.signingkey`). Logic lives in
-  `internal/release/release.go`; git primitives in `internal/git/tags.go`.
+  Before every gate invocation, `gate.Run` (`internal/gate/clean.go`) runs
+  `git status --porcelain` and deletes/discards anything outside
+  `packages/web-app-<id>/` and an allowlist of shared root files — the
+  sandboxed build/repair Claude invocation has no way to clean up a stray
+  artifact it wrote outside its own package directory, so the orchestrator
+  does it instead.
+- `extctl release` — scans the web-extensions checkout for extensions merged
+  to the default branch but never released, and creates + pushes a signed
+  git tag `<app-id>-v<version>` (version from `package.json`) for each. The
+  web-extensions GitHub Action picks up the tag and builds the release —
+  extctl only pushes the tag. Idempotent (an extension counts as released once
+  any `<app-id>-v*` tag exists). `--dry-run` lists without creating/pushing.
+  Signed tags require `user.signingkey` in the target repo's git config.
+  Logic in `internal/release/release.go`; git primitives in
+  `internal/git/tags.go`.
+- `extctl publish [--id <app-id>] [--dry-run]` — scans web-extensions GitHub
+  Releases for extensions not yet in `owncloud/marketplace` and **stages** a
+  submission per extension (downloads, resolves metadata, captures
+  screenshots, commits locally) without pushing or opening a PR — that's the
+  separate, explicit `approve` step, so a submission always gets reviewed
+  before it goes public and a bad screenshot capture can be retried without
+  redoing everything else. Three commands:
+  - `extctl publish [--id <app-id>] [--dry-run]` — the scan+stage step (see
+    below).
+  - `extctl publish approve <app-id>[@<version>]` — pushes the staged
+    `publish/<app-id>-v<version>` branch and opens its PR. Bare `<app-id>`
+    works if exactly one version is pending; disambiguate with `@<version>`
+    otherwise. Idempotent — returns the existing PR's URL if one's already
+    open on that branch instead of duplicating it.
+  - `extctl publish retry-screenshots <app-id>[@<version>]` — checks out the
+    staged branch, generates a fresh screenshot spec and recaptures, reusing
+    the already-downloaded bundle and already-resolved tags/minOCIS/license
+    off the checked-out `extension.yaml`. New screenshots/captions are
+    amended onto the existing commit (`git commit --amend`), so `approve`
+    still ever pushes exactly one commit per submission.
+
+  **Staging step:** downloads the release's zip asset via `gh release
+  download` and uses it directly as `bundle.zip` (already byte-identical to
+  what marketplace needs). `license`/`subtitle` come from that extension's
+  own `package.json` — no `license` field means the extension fails to stage
+  rather than getting a guessed value. `tags`/`minOCIS`
+  (`marketplace.ResolveTags`/`ResolveMinOCIS`) reuse the extension's most
+  recent prior marketplace release verbatim if one exists; otherwise tags
+  fall back to Claude inference (`infer-tags.md`) or are left unset (no
+  placeholder), and minOCIS — never guessed by Claude, since it's a hard
+  compatibility claim — falls back to `InferMinOCISFromHistory` (highest
+  stable `owncloud/ocis` release before the extension's first commit date) or
+  is left unset. None of this inferred/heuristic context goes into the PR
+  body — `printReviewNotes` prints it to the terminal at staging time, since
+  a human reviews it before `approve` ever runs.
+
+  Screenshots come from a fresh, dedicated `tests/e2e/marketplace-
+  screenshots.spec.ts` Claude writes per extension (`marketplace-
+  screenshots.md`, see `GenerateScreenshotSpec`) — never `acceptance.spec.ts`,
+  which optimizes for functional assertions, not for looking good publicly.
+  The spec is never committed (written into `target_repo.checkout`, removed
+  after the run; a copy is kept alongside `playwright.log`/`e2e-report.json`
+  in the review dir if capture comes up with zero screenshots).
+
+  `prepareOCISForCapture` brings up a fresh oCIS stack (full `docker compose
+  down`+`up -d`, not `restart` — see `freshOCISUp`'s doc comment) with the
+  released `dist/` staged in, installs dependencies (`pnpm install
+  --frozen-lockfile` — `node_modules` is never committed and doesn't exist
+  on a fresh checkout, same reason `gate/run-gate.sh` does this before its
+  own e2e stage), clears stale auth state (`clearStaleAuthCache`), and
+  writes the force-screenshot config — all BEFORE Claude is invoked, so
+  `GenerateScreenshotSpec`'s Claude session has a live oCIS to test against.
+  That session is granted scoped Bash access
+  (`Bash(pnpm playwright test *)`, restricted to one project via
+  `publish.screenshot_project`/`publish.screenshot_project_overrides` rather
+  than the full browser matrix) specifically so it can run the spec it just
+  wrote and fix real failures (selector mismatches, mock/assertion drift)
+  before returning, instead of writing blind and hoping — see
+  `prompts/marketplace-screenshots.md`'s "Run it yourself and fix real
+  failures" section, which caps Claude's own fix-and-rerun cycles at ~3 so a
+  stubborn single assertion can't loop indefinitely. `playwrightCaptureEnv`
+  sets `BASE_URL_OCIS`/`OCIS_URL` for both Claude's own Bash calls and the
+  orchestrator's fallback run — some extensions ship their own
+  `global-setup.ts` that falls back to an unrelated external URL when
+  neither is set (see `ocis.go`). If Claude's session never leaves a report
+  behind at all (wrote the spec but never ran it), `runPlaywrightDirect`
+  runs it once directly as a fallback so the attempt still yields something
+  to collect. Best-effort throughout: a submission still gets staged without
+  screenshots if spec generation or capture fails.
+
+  `captureScreenshotsWithRetry` layers an OUTER retry on top of Claude's own
+  inner one: up to `maxFreshSpecAttempts` (3) full attempts — fresh oCIS
+  bring-up, fresh Claude session, fresh spec each time, never re-running a
+  previous attempt's spec — stopping as soon as one attempt has zero test
+  failures (`gate.AllTestsPassed`) AND `CollectScreenshots` dropped nothing
+  (`len(warnings) == 0`; see `isVisuallyDegenerate` below — a passed test
+  whose screenshot got dropped is treated the same as a failed test, so it
+  actually triggers a retry instead of silently shipping fewer screenshots
+  than asked for). If every attempt runs out without a full pass, the last
+  attempt's (partial, or empty) result is used — not necessarily the best
+  one seen across attempts, since `CollectScreenshots` clears its
+  destination each call. Each outer attempt costs a full Claude call
+  (itself possibly several internal test-and-fix cycles) plus an oCIS
+  teardown/bring-up cycle (~2-4+ min), so this meaningfully multiplies
+  capture time/cost — a deliberate tradeoff for reliability over a
+  single-shot attempt.
+
+  `validateScreenshot` (`screenshots.go`) also rejects a screenshot whose
+  content is almost entirely a single flat color
+  (`isVisuallyDegenerate`) — a test can pass its own assertions (e.g. "a
+  marker element exists") while the screenshot itself shows nothing real
+  (blank grey map tiles that hadn't finished painting; a placeholder image
+  stretched to fill the frame). This is a genuinely coarse safety net, not
+  a general solution — empirically tested against a real captured "blank
+  map" screenshot this session, it did NOT reliably distinguish it from a
+  legitimately fine screenshot (both scored similarly on whole-image color
+  diversity/dominant-color-fraction/edge-density; surrounding UI chrome —
+  headers, buttons, text — provides just enough incidental variety to mask
+  a blank CONTENT region specifically). It only reliably catches the
+  extreme case: the ENTIRE frame is one near-flat color (e.g. the original
+  1x1-pixel-photo bug, which affected the whole viewport, not one region).
+  The map-tiles case is instead addressed at the prompt level —
+  `marketplace-screenshots.md`'s "locator present ≠ visually rendered" rule
+  — since a targeted "wait for this specific async content to actually
+  paint" instruction is more precise than a generic pixel heuristic can be
+  for a region-specific blank state.
+
+  `freshOCISUp` also runs `ensureExternalSitesManifest` before `docker
+  compose up` — a Docker Desktop/virtiofs bug where stacking a file-level
+  bind mount on top of a directory mount fails if the underlying file doesn't
+  exist yet, which it never does on a fresh `target_repo.checkout` (build
+  output isn't committed). `gate/run-gate.sh`'s e2e stage brings up the same
+  stack from the same checkout and could plausibly hit the same bug — not yet
+  fixed there since it hasn't been observed.
+
+  `clearStaleAuthCache` deletes `<ext>/tests/e2e/.auth/` before every
+  capture run. Some extensions (confirmed: photo-addon) cache Playwright
+  `storageState` there keyed only on file existence, no TTL — harmless in a
+  normal long-lived dev oCIS, but `freshOCISUp` just tore down and recreated
+  oCIS, which regenerates its IDP signing key, so a cached token immediately
+  fails with `token signature is invalid`. Surfaces to Playwright as a stuck
+  OIDC login redirect loop and a 30s timeout — indistinguishable from a
+  genuine oCIS-readiness flake without reading the container's own logs.
+  `CollectScreenshots`/`gate.AllScreenshots` only accept `passed` test
+  results, specifically so a failure like this can never silently surface a
+  login-page screenshot as if it were a real capture — Playwright's
+  `screenshot: 'on'` attaches a screenshot to every result regardless of
+  outcome, so a naive "grab whatever's attached" reading previously reported
+  a fully-failed run as a successful capture. `CollectScreenshots` also
+  clears its destDir (`<review dir>/screenshots/`) unconditionally before
+  writing, even when this run captures zero shots — otherwise a retry that
+  captures fewer screenshots than a previous attempt (e.g. 1 this time vs. 3
+  before) leaves the earlier run's leftover files sitting alongside the new
+  one, silently misrepresenting what the current run actually produced.
+
+  **Review dir:** every staged extension gets `runs/publish/<app-id>-
+  <version>/` (durable, not a temp dir — must survive until a human reviews
+  it, possibly much later) holding the bundle, Playwright log/report, and any
+  captured screenshots. The canonical state, though, is the git commit itself
+  — `bundle.zip`, `extension.yaml`, `screenshots/` committed on
+  `publish/<app-id>-v<version>` in `marketplace_repo.checkout`, which is what
+  `approve`/`retry-screenshots` actually act on.
+
+  Multiple unpublished releases of one extension (e.g. v0.1.0–v0.3.0 all
+  tagged before publish ever ran) all get staged in the same run, oldest
+  first. `Run`'s per-app-id metadata cache makes tags/minOCIS consistent
+  across that batch — the first version to resolve them is what every later
+  version in the same run reuses, since a staged-but-unapproved sibling
+  branch isn't visible to `PreviousRelease` (it only sees merged history).
+  Logic lives in `internal/marketplace/`.
 - `extctl stats [--days=N]` — three-section dashboard (default: last 30 days).
   **TODAY**: today's slate breakdown (total candidates, fresh vs carryover,
   per-status counts, in-flight builds with phase/stage/cost).
@@ -235,12 +370,44 @@ allowlists by prompt:
   `lint` script. `lint` is a workspace-root-only script (globs `packages/**`
   and `support/**`); it must always run from the repo root, never `cd`'d into
   a package directory.
+- Marketplace tag inference (`infer-tags.md`), used by `extctl publish` only
+  when an extension has no prior marketplace release to reuse tags from:
+  `Read,Grep,Glob`. Read-only — it classifies an existing extension, never
+  edits anything.
+- Marketplace screenshot spec generation (`marketplace-screenshots.md`),
+  used by every `extctl publish` run: `Read,Grep,Glob,Write,Edit,Bash(pnpm
+  playwright test *)`. Write/Edit are scoped by instruction to exactly one
+  new file (`tests/e2e/marketplace-screenshots.spec.ts`, never committed) —
+  Claude reads the extension's existing source/acceptance spec for context
+  but must not touch either. Edit is granted alongside Write (not Write
+  alone) because Claude routinely needs to revise the file it just wrote
+  (e.g. a selector fix after re-reading a source component) — observed
+  failing with only Write granted: Claude wrote the spec correctly, then
+  tried `Edit` on it, got denied, and gave up mid-task instead of falling
+  back to a full rewrite via `Write`. Bash is the one deliberate exception
+  to "Claude never runs Playwright itself" below — scoped to exactly that
+  one command (not a bare `Bash` grant) so this session can run the spec it
+  wrote against the already-brought-up oCIS instance and fix real failures
+  before returning, rather than writing blind; see `internal/marketplace`'s
+  section above for the full flow.
 
 No `git push`, no `gh`, no network tools — those are always orchestrator
 actions. The same applies to the gate's e2e stage: Docker and Playwright
 execution are orchestrator actions in `gate/run-gate.sh`, never granted to the
-build-stage Claude invocation. Claude only writes the Playwright spec files; the
-gate runs them.
+build-stage Claude invocation — Claude only writes the Playwright spec files
+there; the gate runs them, and a failure there feeds a SEPARATE repair
+invocation (`repair.md`) with its own retry cycle. `extctl publish`'s
+screenshot capture is the one exception (above): it has no equivalent
+separate gate+repair pipeline downstream, so a content bug in the spec has
+nowhere else to get caught and fixed — granting the writing session itself
+scoped, read-only-in-effect Playwright-execution access is what closes that
+gap instead.
+
+**Prompt anchoring:** `claude.Run` (`internal/claude/run.go`) appends a fixed
+trailing `TASK: Follow the instructions above now.` directive to every prompt
+before it hits the subprocess's stdin (see `anchorPrompt`'s doc comment for
+why — a `claude` CLI quirk where long, structured prompts can otherwise get
+misread as reference context instead of a request).
 
 **Issue comments:** `{{ISSUE_COMMENTS}}` is substituted into the planning,
 derive-stages, and build-stage prompts. It contains all Jira comments in

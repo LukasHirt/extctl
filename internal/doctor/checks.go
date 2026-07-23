@@ -117,6 +117,7 @@ func checkConfig(r *Report, cfgPath string) *config.Config {
 	checkRequiredField(r, "jira.base_url", cfg.Jira.BaseURL)
 	checkRequiredField(r, "jira.project", cfg.Jira.Project)
 	checkRequiredField(r, "target_repo.remote", cfg.TargetRepo.Remote)
+	checkRequiredField(r, "marketplace_repo.remote", cfg.MarketplaceRepo.Remote)
 
 	return cfg
 }
@@ -192,14 +193,16 @@ func checkPaths(r *Report, cfg *config.Config) {
 	}
 
 	prompts := map[string]string{
-		"prompts.gen_specs":     cfg.Prompts.GenSpecs,
-		"prompts.plan":          cfg.Prompts.Plan,
-		"prompts.derive_stages": cfg.Prompts.DeriveStages,
-		"prompts.build_stage":   cfg.Prompts.BuildStage,
-		"prompts.build_summary": cfg.Prompts.BuildSummary,
-		"prompts.repair":        cfg.Prompts.Repair,
-		"prompts.rebase_repair": cfg.Prompts.RebaseRepair,
-		"prompts.revise":        cfg.Prompts.Revise,
+		"prompts.gen_specs":               cfg.Prompts.GenSpecs,
+		"prompts.plan":                    cfg.Prompts.Plan,
+		"prompts.derive_stages":           cfg.Prompts.DeriveStages,
+		"prompts.build_stage":             cfg.Prompts.BuildStage,
+		"prompts.build_summary":           cfg.Prompts.BuildSummary,
+		"prompts.repair":                  cfg.Prompts.Repair,
+		"prompts.rebase_repair":           cfg.Prompts.RebaseRepair,
+		"prompts.revise":                  cfg.Prompts.Revise,
+		"prompts.infer_tags":              cfg.Prompts.InferTags,
+		"prompts.marketplace_screenshots": cfg.Prompts.MarketplaceScreenshots,
 	}
 	// Sort keys for stable output.
 	keys := make([]string, 0, len(prompts))
@@ -240,23 +243,33 @@ func checkCheckout(r *Report, cfg *config.Config) {
 	if cfg == nil {
 		return
 	}
-	checkout := cfg.TargetRepo.Checkout
+	checkCheckoutAt(r, SectionCheckout, cfg.TargetRepo.Checkout)
+}
+
+func checkMarketplaceCheckout(r *Report, cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	checkCheckoutAt(r, SectionMarketplaceCheckout, cfg.MarketplaceRepo.Checkout)
+}
+
+func checkCheckoutAt(r *Report, section Section, checkout string) {
 	info, err := os.Stat(checkout)
 	if err != nil {
 		if os.IsNotExist(err) {
-			r.add(SectionCheckout, OK, "%s does not exist yet — will be created via `gh repo clone` on first run", checkout)
+			r.add(section, OK, "%s does not exist yet — will be created via `gh repo clone` on first run", checkout)
 			return
 		}
-		r.add(SectionCheckout, ERROR, "%s: %v", checkout, err)
+		r.add(section, ERROR, "%s: %v", checkout, err)
 		return
 	}
 	if !info.IsDir() {
-		r.add(SectionCheckout, ERROR, "%s exists but is not a directory", checkout)
+		r.add(section, ERROR, "%s exists but is not a directory", checkout)
 		return
 	}
 	if _, err := os.Stat(filepath.Join(checkout, ".git")); err != nil {
-		r.add(SectionCheckout, ERROR, "%s exists but has no .git entry — not a valid git working tree", checkout)
+		r.add(section, ERROR, "%s exists but has no .git entry — not a valid git working tree", checkout)
 		return
 	}
-	r.add(SectionCheckout, OK, "%s exists and looks like a valid git working tree", checkout)
+	r.add(section, OK, "%s exists and looks like a valid git working tree", checkout)
 }

@@ -10,24 +10,69 @@ import (
 )
 
 type Config struct {
-	Timezone              string     `yaml:"timezone"`
-	FreshCandidatesPerDay int        `yaml:"fresh_candidates_per_day"`
-	TargetRepo            TargetRepo `yaml:"target_repo"`
-	DefaultBranch         string     `yaml:"default_branch"`
-	Jira                  Jira       `yaml:"jira"`
-	Claude                Claude     `yaml:"claude"`
-	Decay                 Decay      `yaml:"decay"`
-	Prompts               Prompts    `yaml:"prompts"`
-	Media                 Media      `yaml:"media"`
-	IdeaPool              string     `yaml:"idea_pool"`
-	RunsDir               string     `yaml:"runs_dir"`
-	DeliveredYAML         string     `yaml:"delivered_yaml"`
-	ScaffoldDir           string     `yaml:"scaffold_dir"`
+	Timezone              string          `yaml:"timezone"`
+	FreshCandidatesPerDay int             `yaml:"fresh_candidates_per_day"`
+	TargetRepo            TargetRepo      `yaml:"target_repo"`
+	MarketplaceRepo       MarketplaceRepo `yaml:"marketplace_repo"`
+	DefaultBranch         string          `yaml:"default_branch"`
+	Jira                  Jira            `yaml:"jira"`
+	Claude                Claude          `yaml:"claude"`
+	Decay                 Decay           `yaml:"decay"`
+	Prompts               Prompts         `yaml:"prompts"`
+	Media                 Media           `yaml:"media"`
+	Publish               Publish         `yaml:"publish"`
+	IdeaPool              string          `yaml:"idea_pool"`
+	RunsDir               string          `yaml:"runs_dir"`
+	DeliveredYAML         string          `yaml:"delivered_yaml"`
+	ScaffoldDir           string          `yaml:"scaffold_dir"`
 }
 
 type TargetRepo struct {
 	Remote   string `yaml:"remote"`
 	Checkout string `yaml:"checkout"`
+}
+
+// MarketplaceRepo is the second external repo `extctl publish` opens PRs
+// against (owncloud/marketplace) — a separate checkout from TargetRepo
+// (owncloud/web-extensions), following the same "extctl-owned, safe to
+// hard-reset" convention.
+type MarketplaceRepo struct {
+	Remote        string `yaml:"remote"`
+	Checkout      string `yaml:"checkout"`
+	DefaultBranch string `yaml:"default_branch"`
+}
+
+// Publish holds fixed, org-wide extension.yaml metadata `extctl publish`
+// cannot derive from an extension's own package.json or the marketplace
+// itself. license and minOCIS are deliberately NOT here — both are
+// per-extension values (license read from that extension's own
+// package.json; minOCIS reused from its previous marketplace release, if
+// any — see internal/marketplace) that don't have a single sane org-wide
+// constant, unlike authors.
+type Publish struct {
+	Authors        []PublishAuthor `yaml:"authors"`
+	MaxScreenshots int             `yaml:"max_screenshots"`
+	// ScreenshotProject is the only Playwright project (chrome/firefox/
+	// webkit) screenshot capture actually runs — not just a dedup
+	// preference among several that all ran. Most extensions need only one
+	// browser's screenshots, so running the other two is pure wasted time;
+	// see internal/marketplace.ProjectForScreenshots.
+	ScreenshotProject string `yaml:"screenshot_project"`
+	// ScreenshotProjectOverrides lets a specific extension use a different
+	// project than ScreenshotProject (keyed by app-id, no web-app- prefix)
+	// — e.g. an extension whose functionality is genuinely chrome-only
+	// (media casting, a chrome-specific API) rather than merely preferring
+	// chrome. Deliberately a manual, explicit escape hatch rather than an
+	// automatic multi-browser fallback: every capture failure observed so
+	// far failed identically across all three browsers (a systemic issue,
+	// not a browser-specific one), so auto-retrying with other browsers
+	// would just cost more time for the same result.
+	ScreenshotProjectOverrides map[string]string `yaml:"screenshot_project_overrides"`
+}
+
+type PublishAuthor struct {
+	Name string `yaml:"name"`
+	URL  string `yaml:"url"`
 }
 
 type Jira struct {
@@ -63,14 +108,16 @@ type Media struct {
 }
 
 type Prompts struct {
-	GenSpecs     string `yaml:"gen_specs"`
-	Plan         string `yaml:"plan"`
-	DeriveStages string `yaml:"derive_stages"`
-	BuildStage   string `yaml:"build_stage"`
-	BuildSummary string `yaml:"build_summary"`
-	Repair       string `yaml:"repair"`
-	RebaseRepair string `yaml:"rebase_repair"`
-	Revise       string `yaml:"revise"`
+	GenSpecs               string `yaml:"gen_specs"`
+	Plan                   string `yaml:"plan"`
+	DeriveStages           string `yaml:"derive_stages"`
+	BuildStage             string `yaml:"build_stage"`
+	BuildSummary           string `yaml:"build_summary"`
+	Repair                 string `yaml:"repair"`
+	RebaseRepair           string `yaml:"rebase_repair"`
+	Revise                 string `yaml:"revise"`
+	InferTags              string `yaml:"infer_tags"`
+	MarketplaceScreenshots string `yaml:"marketplace_screenshots"`
 }
 
 // Defaults applied when fields are zero-valued.
@@ -86,6 +133,21 @@ func (c *Config) applyDefaults() {
 	}
 	if c.TargetRepo.Checkout == "" {
 		c.TargetRepo.Checkout = ".extctl-checkout"
+	}
+	if c.MarketplaceRepo.Checkout == "" {
+		c.MarketplaceRepo.Checkout = ".extctl-marketplace-checkout"
+	}
+	if c.MarketplaceRepo.DefaultBranch == "" {
+		c.MarketplaceRepo.DefaultBranch = "main"
+	}
+	if len(c.Publish.Authors) == 0 {
+		c.Publish.Authors = []PublishAuthor{{Name: "ownCloud GmbH", URL: "https://owncloud.com"}}
+	}
+	if c.Publish.MaxScreenshots == 0 {
+		c.Publish.MaxScreenshots = 3
+	}
+	if c.Publish.ScreenshotProject == "" {
+		c.Publish.ScreenshotProject = "chrome"
 	}
 	if c.Jira.CandidateStatus == "" {
 		c.Jira.CandidateStatus = "Needs Approval"
@@ -153,6 +215,12 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Prompts.Revise == "" {
 		c.Prompts.Revise = "prompts/revise.md"
+	}
+	if c.Prompts.InferTags == "" {
+		c.Prompts.InferTags = "prompts/infer-tags.md"
+	}
+	if c.Prompts.MarketplaceScreenshots == "" {
+		c.Prompts.MarketplaceScreenshots = "prompts/marketplace-screenshots.md"
 	}
 	if c.IdeaPool == "" {
 		c.IdeaPool = "idea-pool.yaml"
@@ -272,6 +340,12 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("resolve target_repo.checkout: %w", err)
 	}
 	cfg.TargetRepo.Checkout = absCheckout
+	// MarketplaceRepo.Checkout must be absolute for the same reason.
+	absMarketplaceCheckout, err := filepath.Abs(cfg.MarketplaceRepo.Checkout)
+	if err != nil {
+		return nil, fmt.Errorf("resolve marketplace_repo.checkout: %w", err)
+	}
+	cfg.MarketplaceRepo.Checkout = absMarketplaceCheckout
 	return &cfg, nil
 }
 

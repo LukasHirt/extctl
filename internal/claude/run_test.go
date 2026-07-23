@@ -340,3 +340,73 @@ func TestRun_AllowedToolsFlag(t *testing.T) {
 		t.Errorf("--allowedTools not found in args: %v", capturedArgs)
 	}
 }
+
+// TestRun_DisallowedToolsFlag covers the gap a real publish run hit:
+// omitting "Bash" from AllowedTools alone does not stop Claude from
+// attempting it (the CLI's normal permission flow still applies, and can be
+// silently pre-approved by the invoking user's own global settings) —
+// DisallowedTools is the actual hard denylist and must produce
+// --disallowedTools on the command line.
+func TestRun_DisallowedToolsFlag(t *testing.T) {
+	var capturedArgs []string
+	original := execCommand
+	t.Cleanup(func() { execCommand = original })
+
+	jsonl := buildClaudeJSONL("done", "sess-1", 0.01, 1, false)
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		capturedArgs = args
+		cmd := exec.Command(os.Args[0], "-test.run=TestHelperProcess", "--")
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			"GO_HELPER_STDOUT="+jsonl,
+		)
+		return cmd
+	}
+
+	_, err := Run(RunOptions{
+		Prompt:          "test",
+		AllowedTools:    []string{"Read", "Grep", "Glob", "Write"},
+		DisallowedTools: []string{"Bash"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	found := false
+	for i, a := range capturedArgs {
+		if a == "--disallowedTools" && i+1 < len(capturedArgs) && strings.Contains(capturedArgs[i+1], "Bash") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("--disallowedTools Bash not found in args: %v", capturedArgs)
+	}
+}
+
+func TestRun_NoDisallowedToolsOmitsFlag(t *testing.T) {
+	var capturedArgs []string
+	original := execCommand
+	t.Cleanup(func() { execCommand = original })
+
+	jsonl := buildClaudeJSONL("done", "sess-1", 0.01, 1, false)
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		capturedArgs = args
+		cmd := exec.Command(os.Args[0], "-test.run=TestHelperProcess", "--")
+		cmd.Env = append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			"GO_HELPER_STDOUT="+jsonl,
+		)
+		return cmd
+	}
+
+	_, err := Run(RunOptions{Prompt: "test"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, a := range capturedArgs {
+		if a == "--disallowedTools" {
+			t.Errorf("--disallowedTools should be omitted when unset, args: %v", capturedArgs)
+		}
+	}
+}

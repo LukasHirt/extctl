@@ -329,3 +329,128 @@ func loadJSONReport(path string) (*jsonReport, error) {
 	}
 	return &r, nil
 }
+
+// TitledScreenshot pairs a Playwright spec's title with the screenshot path
+// captured for it.
+type TitledScreenshot struct {
+	Title string
+	Path  string
+}
+
+// AllScreenshots returns one (title, screenshot path) pair per distinct spec
+// TITLE in the JSON report at jsonReportPath, for PASSED tests only — a
+// failed test's attachment is whatever state the page was in when it timed
+// out/errored (e.g. still on a login page), which is never usable as a
+// marketplace screenshot, the only current caller of this function
+// (marketplace.CollectScreenshots). Playwright's JSON reporter attaches a
+// "screenshot" path to every test result, including passed ones, when
+// scaffold/playwright.config.ts's CI=true capture mode is active.
+//
+// Deduping by TITLE (not by spec node) matters because Playwright, when run
+// with fullyParallel:true and multiple projects (the gate/publish
+// convention — chrome/firefox/webkit), creates a SEPARATE jsonSpec node per
+// project for the same test, each with an identical title and exactly one
+// entry in its own Tests array — verified against a real multi-project run
+// (testdata/e2e-report-multiproject-real.json), not the single-spec-node-
+// with-multiple-tests[] shape this function originally (incorrectly)
+// assumed. Deduping only within one spec node — as a naive per-node walk
+// does — lets the same title through once per project, which is exactly
+// the repeating-caption bug this fixes. This implementation walks every
+// node and keeps one screenshot per title, upgrading to preferredProject's
+// screenshot if a later-encountered node for the same title has it, so it's
+// correct under both the assumed and the real schema.
+func AllScreenshots(jsonReportPath, preferredProject string) ([]TitledScreenshot, error) {
+	report, err := loadJSONReport(jsonReportPath)
+	if err != nil {
+		return nil, err
+	}
+
+	type picked struct {
+		path        string
+		isPreferred bool
+	}
+	var order []string
+	byTitle := map[string]picked{}
+
+	var walk func([]jsonSuite)
+	walk = func(suites []jsonSuite) {
+		for _, s := range suites {
+			for _, spec := range s.Specs {
+				for _, t := range spec.Tests {
+					if len(t.Results) == 0 {
+						continue
+					}
+					lastResult := t.Results[len(t.Results)-1]
+					if lastResult.Status != "passed" {
+						// A failed test's attached screenshot is whatever
+						// state the page was in when it timed out/errored
+						// (e.g. still on the login page) — never a valid
+						// marketplace screenshot. Skip it entirely rather
+						// than surface a broken capture as if it succeeded.
+						continue
+					}
+					path := screenshotAttachment(lastResult.Attachments)
+					if path == "" {
+						continue
+					}
+					isPreferred := t.ProjectName == preferredProject
+					existing, seen := byTitle[spec.Title]
+					if !seen {
+						order = append(order, spec.Title)
+						byTitle[spec.Title] = picked{path: path, isPreferred: isPreferred}
+					} else if isPreferred && !existing.isPreferred {
+						byTitle[spec.Title] = picked{path: path, isPreferred: true}
+					}
+				}
+			}
+			walk(s.Suites)
+		}
+	}
+	walk(report.Suites)
+
+	out := make([]TitledScreenshot, 0, len(order))
+	for _, title := range order {
+		out = append(out, TitledScreenshot{Title: title, Path: byTitle[title].path})
+	}
+	return out, nil
+}
+
+// AllTestsPassed reports whether every test in the JSON report at
+// jsonReportPath has a passing final result — used by
+// marketplace.captureScreenshotsWithRetry to decide whether a screenshot
+// capture attempt is "done" or needs a freshly-generated spec retried.
+func AllTestsPassed(jsonReportPath string) (bool, error) {
+	report, err := loadJSONReport(jsonReportPath)
+	if err != nil {
+		return false, err
+	}
+
+	allPassed := true
+	var walk func([]jsonSuite)
+	walk = func(suites []jsonSuite) {
+		for _, s := range suites {
+			for _, spec := range s.Specs {
+				for _, t := range spec.Tests {
+					if len(t.Results) == 0 {
+						continue
+					}
+					if isFailingStatus(t.Results[len(t.Results)-1].Status) {
+						allPassed = false
+					}
+				}
+			}
+			walk(s.Suites)
+		}
+	}
+	walk(report.Suites)
+	return allPassed, nil
+}
+
+func screenshotAttachment(attachments []jsonAttachment) string {
+	for _, a := range attachments {
+		if a.Name == "screenshot" {
+			return a.Path
+		}
+	}
+	return ""
+}

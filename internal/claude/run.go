@@ -27,10 +27,30 @@ type Result struct {
 type RunOptions struct {
 	Prompt       string
 	AllowedTools []string
-	Model        string // optional; defaults to claude's own default
-	WorkDir      string // working directory for the subprocess
-	OutputFile   string // path to write the raw JSONL stream
-	Resume       string // session_id to resume (for repair runs, per spec §8.3)
+	// DisallowedTools is a hard denylist, distinct from simply omitting a
+	// tool from AllowedTools. --allowedTools only pre-approves the tools it
+	// names; anything else (e.g. Bash, when a prompt is meant to be
+	// Read-only) still falls through to the CLI's normal permission flow —
+	// which, headlessly, can be silently pre-approved by the invoking
+	// user's own global/project Claude Code settings (accumulated from
+	// their own interactive usage) regardless of what this invocation
+	// intended to grant. Prompts that must never touch Bash should set
+	// DisallowedTools: []string{"Bash"} rather than relying on its absence
+	// from AllowedTools.
+	DisallowedTools []string
+	Model           string // optional; defaults to claude's own default
+	WorkDir         string // working directory for the subprocess
+	OutputFile      string // path to write the raw JSONL stream
+	Resume          string // session_id to resume (for repair runs, per spec §8.3)
+	// Env is appended on top of os.Environ() for the claude subprocess —
+	// and, critically, inherited by any Bash tool call Claude itself makes,
+	// since a child process's env is what a subprocess spawns with. Used by
+	// prompts granted scoped Bash access to run a real command (e.g.
+	// marketplace-screenshots.md running `pnpm playwright test` against a
+	// live oCIS) that needs specific env vars (BASE_URL_OCIS, ...) set
+	// exactly the way the orchestrator's own equivalent direct invocation
+	// would set them.
+	Env []string
 }
 
 // streamEvent is a single line of --output-format stream-json output.
@@ -57,6 +77,24 @@ type contentBlock struct {
 	Input json.RawMessage `json:"input,omitempty"`
 }
 
+// anchorPrompt appends an explicit trailing task marker after prompt's own
+// content. Every extctl prompt file is a long, multi-section markdown
+// document (declarative "You are..."/"Read, in this order..." framing,
+// several `##` headers) piped in wholesale via stdin — and the currently
+// installed claude CLI's headless first-turn handling can, for exactly that
+// shape of input, treat it as attached reference context rather than an
+// actual request: it replies "I don't see an actual request in your
+// message" and makes no tool calls at all, confirmed by reproducing the
+// failure with the raw CLI outside of extctl entirely (same prompt file,
+// same flags, no Go code involved) and confirmed fixed by adding this exact
+// closing directive — the identical prompt content succeeds reliably with it
+// appended, on multiple separate runs. Root cause not fully isolated (the
+// CLI's classifier is opaque from the outside), but the fix is verified
+// empirically and costs nothing on prompts that would have worked anyway.
+func anchorPrompt(prompt string) string {
+	return prompt + "\n\n---\n\nTASK: Follow the instructions above now.\n"
+}
+
 // execCommand is the exec.Command function used to invoke the claude CLI.
 // Replaced in tests to avoid calling the real binary.
 var execCommand = exec.Command
@@ -68,6 +106,9 @@ func Run(opts RunOptions) (*Result, error) {
 	args := []string{"-p"}
 	if len(opts.AllowedTools) > 0 {
 		args = append(args, "--allowedTools", strings.Join(opts.AllowedTools, ","))
+	}
+	if len(opts.DisallowedTools) > 0 {
+		args = append(args, "--disallowedTools", strings.Join(opts.DisallowedTools, ","))
 	}
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
@@ -83,8 +124,11 @@ func Run(opts RunOptions) (*Result, error) {
 	}
 	if cmd.Env == nil {
 		cmd.Env = os.Environ()
+		if len(opts.Env) > 0 {
+			cmd.Env = append(cmd.Env, opts.Env...)
+		}
 	}
-	cmd.Stdin = strings.NewReader(opts.Prompt)
+	cmd.Stdin = strings.NewReader(anchorPrompt(opts.Prompt))
 	cmd.Stderr = os.Stderr
 
 	stdout, err := cmd.StdoutPipe()

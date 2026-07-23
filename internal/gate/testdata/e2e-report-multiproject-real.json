@@ -1,0 +1,355 @@
+{
+  "config": {
+    "argv": [
+      "/Users/lukashirt/.nvm/versions/node/v24.15.0/bin/node",
+      "/private/tmp/claude-501/-Users-lukashirt-work-extctl-extctl/50f11210-3a65-40a7-8e27-6e51a1e5e82d/scratchpad/pw-verify/node_modules/.bin/playwright",
+      "test",
+      "--retries=0",
+      "--reporter=list,json"
+    ],
+    "configFile": "/private/tmp/claude-501/-Users-lukashirt-work-extctl-extctl/50f11210-3a65-40a7-8e27-6e51a1e5e82d/scratchpad/pw-verify/playwright.config.ts",
+    "rootDir": "/private/tmp/claude-501/-Users-lukashirt-work-extctl-extctl/50f11210-3a65-40a7-8e27-6e51a1e5e82d/scratchpad/pw-verify/tests",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 6
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/private/tmp/claude-501/-Users-lukashirt-work-extctl-extctl/50f11210-3a65-40a7-8e27-6e51a1e5e82d/scratchpad/pw-verify/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 6
+        },
+        "id": "chrome",
+        "name": "chrome",
+        "testDir": "/private/tmp/claude-501/-Users-lukashirt-work-extctl-extctl/50f11210-3a65-40a7-8e27-6e51a1e5e82d/scratchpad/pw-verify/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/private/tmp/claude-501/-Users-lukashirt-work-extctl-extctl/50f11210-3a65-40a7-8e27-6e51a1e5e82d/scratchpad/pw-verify/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 6
+        },
+        "id": "firefox",
+        "name": "firefox",
+        "testDir": "/private/tmp/claude-501/-Users-lukashirt-work-extctl-extctl/50f11210-3a65-40a7-8e27-6e51a1e5e82d/scratchpad/pw-verify/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      },
+      {
+        "outputDir": "/private/tmp/claude-501/-Users-lukashirt-work-extctl-extctl/50f11210-3a65-40a7-8e27-6e51a1e5e82d/scratchpad/pw-verify/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 6
+        },
+        "id": "webkit",
+        "name": "webkit",
+        "testDir": "/private/tmp/claude-501/-Users-lukashirt-work-extctl-extctl/50f11210-3a65-40a7-8e27-6e51a1e5e82d/scratchpad/pw-verify/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.61.1",
+    "workers": 7,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "sample.spec.ts",
+      "file": "sample.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "spec A does something",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 121,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-07-21T15:58:18.038Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "test-results/spec-A-does-something-chrome/test-finished-1.png"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b92766bcf73bd5c029a8-86eb4f830820cb097b58",
+          "file": "sample.spec.ts",
+          "line": 2,
+          "column": 5
+        },
+        {
+          "title": "spec B does something else",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chrome",
+              "projectName": "chrome",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 1,
+                  "status": "passed",
+                  "duration": 108,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-07-21T15:58:18.040Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "test-results/spec-B-does-something-else-chrome/test-finished-1.png"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b92766bcf73bd5c029a8-10985f9e4e2861fe838a",
+          "file": "sample.spec.ts",
+          "line": 6,
+          "column": 5
+        },
+        {
+          "title": "spec A does something",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 2,
+                  "status": "passed",
+                  "duration": 110,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-07-21T15:58:18.033Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "test-results/spec-A-does-something-firefox/test-finished-1.png"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b92766bcf73bd5c029a8-62ffeb0f72efd0966ae3",
+          "file": "sample.spec.ts",
+          "line": 2,
+          "column": 5
+        },
+        {
+          "title": "spec B does something else",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 3,
+                  "status": "passed",
+                  "duration": 123,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-07-21T15:58:18.049Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "test-results/spec-B-does-something-else-firefox/test-finished-1.png"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b92766bcf73bd5c029a8-853305fe175ffb1a5a0b",
+          "file": "sample.spec.ts",
+          "line": 6,
+          "column": 5
+        },
+        {
+          "title": "spec A does something",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit",
+              "projectName": "webkit",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 4,
+                  "status": "passed",
+                  "duration": 109,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-07-21T15:58:18.042Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "test-results/spec-A-does-something-webkit/test-finished-1.png"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b92766bcf73bd5c029a8-7c3a8dede469d256f6cd",
+          "file": "sample.spec.ts",
+          "line": 2,
+          "column": 5
+        },
+        {
+          "title": "spec B does something else",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "webkit",
+              "projectName": "webkit",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 5,
+                  "status": "passed",
+                  "duration": 111,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-07-21T15:58:18.040Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "test-results/spec-B-does-something-else-webkit/test-finished-1.png"
+                    }
+                  ]
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "b92766bcf73bd5c029a8-f53dc9f3690aefc9e30d",
+          "file": "sample.spec.ts",
+          "line": 6,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-07-21T15:58:17.854Z",
+    "duration": 481.783,
+    "expected": 6,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

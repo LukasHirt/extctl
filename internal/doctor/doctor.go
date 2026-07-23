@@ -30,11 +30,12 @@ func (s Severity) String() string {
 type Section string
 
 const (
-	SectionConfig   Section = "Config"
-	SectionSecrets  Section = "Secrets"
-	SectionTools    Section = "External tools"
-	SectionPaths    Section = "Paths"
-	SectionCheckout Section = "Target repo checkout"
+	SectionConfig              Section = "Config"
+	SectionSecrets             Section = "Secrets"
+	SectionTools               Section = "External tools"
+	SectionPaths               Section = "Paths"
+	SectionCheckout            Section = "Target repo checkout"
+	SectionMarketplaceCheckout Section = "Marketplace repo checkout"
 )
 
 // Finding is a single check result.
@@ -79,5 +80,6 @@ func Run(cfgPath string) *Report {
 	checkTools(r, cfg)
 	checkPaths(r, cfg)
 	checkCheckout(r, cfg)
+	checkMarketplaceCheckout(r, cfg)
 	return r
 }

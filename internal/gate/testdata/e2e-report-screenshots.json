@@ -1,0 +1,80 @@
+{
+  "suites": [
+    {
+      "title": "acceptance.spec.ts",
+      "file": "acceptance.spec.ts",
+      "specs": [],
+      "suites": [
+        {
+          "title": "Group",
+          "file": "acceptance.spec.ts",
+          "specs": [
+            {
+              "title": "shows the empty state before any files are uploaded",
+              "file": "acceptance.spec.ts",
+              "line": 5,
+              "column": 7,
+              "tests": [
+                {
+                  "projectName": "chrome",
+                  "results": [
+                    {
+                      "status": "passed",
+                      "attachments": [
+                        { "name": "screenshot", "contentType": "image/png", "path": "test-results/spec1-chrome/test-finished-1.png" }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "projectName": "firefox",
+                  "results": [
+                    {
+                      "status": "passed",
+                      "attachments": [
+                        { "name": "screenshot", "contentType": "image/png", "path": "test-results/spec1-firefox/test-finished-1.png" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "title": "no screenshot captured for this one",
+              "file": "acceptance.spec.ts",
+              "line": 20,
+              "column": 7,
+              "tests": [
+                {
+                  "projectName": "chrome",
+                  "results": [
+                    { "status": "passed", "attachments": [] }
+                  ]
+                }
+              ]
+            },
+            {
+              "title": "only ran under firefox",
+              "file": "acceptance.spec.ts",
+              "line": 30,
+              "column": 7,
+              "tests": [
+                {
+                  "projectName": "firefox",
+                  "results": [
+                    {
+                      "status": "passed",
+                      "attachments": [
+                        { "name": "screenshot", "contentType": "image/png", "path": "test-results/spec3-firefox/test-finished-1.png" }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
