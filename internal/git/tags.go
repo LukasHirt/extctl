@@ -12,6 +12,14 @@ func FetchTags(repoPath string) error {
 	return run(repoPath, "fetch", "origin", "--tags")
 }
 
+// FetchTag fetches exactly one already-known tag from origin, unlike
+// FetchTags' "every tag in the remote" — used when a single specific
+// release tag needs to be reachable locally without re-fetching the whole
+// tag set.
+func FetchTag(repoPath, tag string) error {
+	return run(repoPath, "fetch", "origin", "tag", tag)
+}
+
 // Output runs a read-only git command in the given repo and returns its stdout.
 // Used for inspection commands (ls-tree, show, tag -l) whose output we parse.
 func Output(repoPath string, args ...string) ([]byte, error) {
