@@ -18,6 +18,12 @@ target_repo:
   # want the checkout somewhere other than the extctl working directory.
   checkout: '.extctl-checkout'
 
+marketplace_repo:
+  remote: owncloud/marketplace # GitHub repo `extctl publish` opens PRs against
+  # Same convention as target_repo.checkout — extctl-owned, safe to hard-reset.
+  checkout: '.extctl-marketplace-checkout'
+  default_branch: main
+
 default_branch: main
 
 jira:
@@ -51,6 +57,45 @@ media:
   max_screenshots: 3
   max_video_mb: 8
 
+publish:
+  # extension.yaml's `license` is read per-extension from that extension's
+  # own package.json — if that field is missing, publish fails that
+  # extension rather than guessing a license. `authors` has no per-extension
+  # source in extctl, so it's a fixed org-wide value here; review/edit it in
+  # the opened PR before merge if a specific extension needs something
+  # different.
+  authors:
+    - name: ownCloud GmbH
+      url: https://owncloud.com
+  # tags and minOCIS are never configured globally here — both are
+  # per-extension values. tags: reused verbatim from this extension's most
+  # recent prior marketplace release if one exists, else inferred by Claude
+  # from its package.json/README (prompts.infer_tags), else left empty with
+  # a note in the PR for a human to add before merging (marketplace CI
+  # requires at least one). minOCIS: reused from the previous release if one
+  # exists, else inferred as the latest stable owncloud/ocis release that
+  # existed on or before this extension's first commit date (a heuristic,
+  # flagged in the PR — not a verified compatibility check), else left
+  # unset (it's optional) with a PR note.
+  # Upper bound only — Claude decides the actual count per extension (see
+  # prompts/marketplace-screenshots.md) and is told to prefer fewer,
+  # meaningfully distinct screenshots over padding to this number.
+  max_screenshots: 3
+  # Screenshot capture only runs THIS one Playwright project (chrome/
+  # firefox/webkit), not the extension's full browser matrix — running the
+  # other two just to discard their results triples capture time for no
+  # benefit in the common case.
+  screenshot_project: chrome
+  # Per-extension override (app-id without web-app- prefix -> project) for
+  # the rare extension whose functionality is genuinely restricted to one
+  # browser (e.g. a chrome-only casting API) rather than merely preferring
+  # it. Add an entry only once you've confirmed a specific extension needs
+  # it — this is a manual escape hatch, not something extctl detects
+  # automatically.
+  screenshot_project_overrides: {}
+  # screenshot_project_overrides:
+  #   cast: chrome
+
 prompts:
   gen_specs: 'prompts/gen-specs.md'
   plan: 'prompts/plan-extension.md'
@@ -60,6 +105,8 @@ prompts:
   repair: 'prompts/repair.md'
   rebase_repair: 'prompts/rebase-repair.md'
   revise: 'prompts/revise.md'
+  infer_tags: 'prompts/infer-tags.md' # used by `extctl publish` when an extension has no prior marketplace release to reuse tags from
+  marketplace_screenshots: 'prompts/marketplace-screenshots.md' # used by `extctl publish` to write a fresh, dedicated screenshot spec per extension
 
 idea_pool: 'idea-pool.yaml'
 runs_dir: 'runs'

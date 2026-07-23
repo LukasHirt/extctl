@@ -6,12 +6,18 @@ dist/
 extctl.yaml
 .env
 
-# Runtime state — local to the machine, never shared
-runs/20*/
-runs/delivered.yaml
+# Runtime state — local to the machine, never shared. Nothing under runs/
+# is tracked (verified: `git ls-files runs/` is empty) — ignore the whole
+# tree rather than enumerating subdirectories one at a time (runs/20*/,
+# runs/publish/, ...), which is exactly how runs/publish/ slipped through
+# untracked-but-not-ignored for a while.
+runs/
 
-# Auto-provisioned target repo checkout (see target_repo.checkout)
+# Auto-provisioned checkouts (see target_repo.checkout / marketplace_repo.checkout).
+# These are the default paths; a custom-configured checkout path needs its
+# own entry here.
 /.extctl-checkout/
+/.extctl-marketplace-checkout/
 
 # OS
 .DS_Store
