@@ -211,6 +211,11 @@ func prepareOCISForCapture(cfg *config.Config, appID string) (extDir, overridePa
 	}
 	installCmd := exec.Command("pnpm", "install", "--frozen-lockfile")
 	installCmd.Dir = extDir
+	// No TTY on this exec.Command, so pnpm's interactive confirmation before
+	// removing a stale node_modules aborts instead of prompting
+	// (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY) unless CI=true tells it to
+	// auto-confirm, same as pnpm's own suggested fix.
+	installCmd.Env = append(os.Environ(), "CI=true")
 	if out, err := installCmd.CombinedOutput(); err != nil {
 		return "", "", fmt.Errorf("pnpm install: %w\n%s", err, strings.TrimSpace(string(out)))
 	}
