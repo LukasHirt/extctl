@@ -30,6 +30,12 @@ func TestParseIDArg(t *testing.T) {
 // full BuildSubmission machinery.
 func newPendingBranch(t *testing.T, checkout, baseBranch, appID, version string) {
 	t.Helper()
+	// A cloned repo doesn't inherit its source's local git config (identity
+	// set via `git config` without --global lives in .git/config, which
+	// `git clone` doesn't copy) — commit fails here on any machine/CI
+	// runner without a global user.email/user.name configured.
+	runGitCmd(t, checkout, "config", "user.email", "test@example.com")
+	runGitCmd(t, checkout, "config", "user.name", "Test")
 	runGitCmd(t, checkout, "checkout", baseBranch)
 	branch := "publish/" + appID + "-v" + version
 	runGitCmd(t, checkout, "checkout", "-b", branch)

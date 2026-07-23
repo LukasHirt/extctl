@@ -128,6 +128,8 @@ func TestAmendSubmissionScreenshots_ReplacesContentWithoutNewCommit(t *testing.T
 	runGitCmd(t, upstream, "branch", "-M", "master")
 	checkout := t.TempDir()
 	runGitCmd(t, checkout, "clone", "-q", upstream, ".")
+	runGitCmd(t, checkout, "config", "user.email", "test@example.com")
+	runGitCmd(t, checkout, "config", "user.name", "Test")
 	runGitCmd(t, checkout, "fetch", "origin")
 
 	cfg := testPublishConfig()
@@ -194,6 +196,8 @@ func TestAmendSubmissionScreenshots_NoNewScreenshotsIsANoop(t *testing.T) {
 	runGitCmd(t, upstream, "branch", "-M", "master")
 	checkout := t.TempDir()
 	runGitCmd(t, checkout, "clone", "-q", upstream, ".")
+	runGitCmd(t, checkout, "config", "user.email", "test@example.com")
+	runGitCmd(t, checkout, "config", "user.name", "Test")
 	runGitCmd(t, checkout, "fetch", "origin")
 
 	cfg := testPublishConfig()
