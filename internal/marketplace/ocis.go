@@ -185,8 +185,12 @@ func playwrightCaptureEnv(reportPath string) []string {
 // needs: dependencies installed (node_modules, including the playwright
 // binary, is never committed and is missing entirely on mainCheckout — a
 // bare git checkout hard-reset by EnsureCheckout on every command — until
-// something installs it; gate/run-gate.sh always runs `pnpm install
-// --frozen-lockfile` before its own e2e stage, this path mirrors that; no
+// something installs it; gate/run-gate.sh runs `pnpm install
+// --frozen-lockfile` before its own e2e stage, but this path uses
+// --no-frozen-lockfile instead — the extension's package.json here has
+// already been pinned to an old release's dependency versions by
+// pinExtensionSourceToRelease, which the current, unpinned root
+// pnpm-lock.yaml won't match for any release but the latest; no
 // `pnpm build`, unlike gate — dist/ is already the exact released bytes from
 // PreparePlaywrightRun and building would overwrite that with a fresh local
 // build), stale auth state cleared (clearStaleAuthCache), and the
@@ -209,7 +213,16 @@ func prepareOCISForCapture(cfg *config.Config, appID string) (extDir, overridePa
 	if err := clearStaleAuthCache(extDir); err != nil {
 		return "", "", err
 	}
-	installCmd := exec.Command("pnpm", "install", "--frozen-lockfile")
+	// --no-frozen-lockfile: pinExtensionSourceToRelease already moved this
+	// package's package.json back to an old release's dependency versions,
+	// but pnpm resolves against the WORKSPACE ROOT lockfile regardless of
+	// installCmd.Dir — which still reflects the current default branch. For
+	// any release that isn't the very latest, that manifest/lockfile
+	// mismatch trips ERR_PNPM_OUTDATED_LOCKFILE under --frozen-lockfile. The
+	// node_modules this produces is throwaway (never committed, wiped by the
+	// next EnsureCheckout hard reset), so letting pnpm reconcile the lockfile
+	// here is safe.
+	installCmd := exec.Command("pnpm", "install", "--no-frozen-lockfile")
 	installCmd.Dir = extDir
 	// No TTY on this exec.Command, so pnpm's interactive confirmation before
 	// removing a stale node_modules aborts instead of prompting
