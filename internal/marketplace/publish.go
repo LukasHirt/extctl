@@ -16,6 +16,13 @@ type Options struct {
 	Config *config.Config
 	DryRun bool
 	OnlyID string // if non-empty, stage only this app-id (no web-app- prefix)
+	// Force discards an existing local publish/<app-id>-v<version> branch
+	// and re-stages from scratch (fresh download, fresh screenshot capture,
+	// fresh tag/minOCIS resolution) instead of skipping it as
+	// already-staged. Requires OnlyID — forcing an entire batch to re-stage
+	// is never what's wanted. Has no effect on an extension that's already
+	// published or already has an open PR; those are never re-staged.
+	Force bool
 }
 
 // StagedResult is one extension whose submission was built and committed
@@ -43,7 +50,7 @@ type FailedResult struct {
 type Summary struct {
 	Scanned int
 	Staged  []StagedResult
-	Skipped []string // "<appID>@<version>" for already-published extensions or ones with an open PR already
+	Skipped []string // "<appID>@<version>" for already-published extensions, ones with an open PR already, or ones already staged locally awaiting approve
 	Failed  []FailedResult
 }
 
@@ -72,6 +79,10 @@ type Summary struct {
 // same extension reuse it instead of independently re-guessing — keeping
 // all submissions in one batch consistent.
 func Run(opts Options, w io.Writer) (*Summary, error) {
+	if opts.Force && opts.OnlyID == "" {
+		return nil, fmt.Errorf("publish: --force requires --id (forcing an entire batch to re-stage is not supported)")
+	}
+
 	cfg := opts.Config
 	printf := func(format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
 
@@ -105,6 +116,37 @@ func Run(opts Options, w io.Writer) (*Summary, error) {
 			printf("skip    %s@%s (already has an open PR: %s)\n", r.AppID, r.Version, existing.URL)
 			summary.Skipped = append(summary.Skipped, r.AppID+"@"+r.Version)
 			continue
+		}
+
+		// No open PR, but a prior run may have already staged this exact
+		// branch (committed locally, never pushed/approved) — re-staging
+		// would redo the download+screenshot capture for nothing and, since
+		// capture is non-deterministic by design, likely stack a second
+		// commit onto the branch instead of amending it. `approve` or
+		// `retry-screenshots` are what a human runs next, not another `publish`.
+		//
+		// Exception: if the branch exists but never got as far as committing
+		// extension.yaml (e.g. a prior run crashed between creating the
+		// branch and finishing the download), there is nothing to approve or
+		// retry — re-stage it unconditionally rather than leaving a dead
+		// branch permanently unstageable.
+		if branchExistsLocally(cfg.MarketplaceRepo.Checkout, branch) {
+			complete := branchHasCompleteSubmission(cfg.MarketplaceRepo.Checkout, branch, r.AppID, r.Version)
+			switch {
+			case complete && opts.Force:
+				printf("force   %s@%s (discarding %s and re-staging from scratch)\n", r.AppID, r.Version, branch)
+				if err := deleteLocalBranch(cfg.MarketplaceRepo.Checkout, branch); err != nil {
+					printf("failed  %s@%s: %v\n", r.AppID, r.Version, err)
+					summary.Failed = append(summary.Failed, FailedResult{AppID: r.AppID, Version: r.Version, Err: err})
+					continue
+				}
+			case complete:
+				printf("skip    %s@%s (already staged locally on %s — run `extctl publish approve`, `extctl publish retry-screenshots`, or `extctl publish --id %s --force` to re-stage from scratch)\n", r.AppID, r.Version, branch, r.AppID)
+				summary.Skipped = append(summary.Skipped, r.AppID+"@"+r.Version)
+				continue
+			default:
+				printf("note    %s@%s (%s exists but a prior run never finished staging it — re-staging)\n", r.AppID, r.Version, branch)
+			}
 		}
 
 		if opts.DryRun {

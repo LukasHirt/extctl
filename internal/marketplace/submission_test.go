@@ -109,6 +109,57 @@ func TestBuildSubmission_RerunWithIdenticalContentSkipsCommit(t *testing.T) {
 	}
 }
 
+// TestBranchHasCompleteSubmission distinguishes a fully staged submission
+// (extension.yaml committed) from a branch that only got as far as `checkout
+// -b` before a prior run crashed — the case Run's --force / auto-heal logic
+// needs to tell apart from "already staged, go run approve".
+func TestBranchHasCompleteSubmission(t *testing.T) {
+	upstream := initTestRepo(t)
+	runGitCmd(t, upstream, "branch", "-M", "master")
+	checkout := t.TempDir()
+	runGitCmd(t, checkout, "clone", "-q", upstream, ".")
+	runGitCmd(t, checkout, "config", "user.email", "test@example.com")
+	runGitCmd(t, checkout, "config", "user.name", "Test")
+	runGitCmd(t, checkout, "fetch", "origin")
+
+	// A branch that exists but never got a submission committed to it.
+	runGitCmd(t, checkout, "checkout", "-b", "publish/x-v0.1.0")
+	if branchHasCompleteSubmission(checkout, "publish/x-v0.1.0", "x", "0.1.0") {
+		t.Error("expected an incomplete branch (no extension.yaml committed) to report false")
+	}
+
+	cfg := testPublishConfig()
+	cfg.MarketplaceRepo.DefaultBranch = "master"
+	bundleDir := t.TempDir()
+	bundlePath := filepath.Join(bundleDir, "bundle.zip")
+	if err := os.WriteFile(bundlePath, []byte("fake zip content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ext := ExtensionYAML{ID: "com.example.x", License: "AGPL-3.0", Version: "0.1.0", Tags: []string{"extension"}}
+	if _, err := BuildSubmission(cfg, checkout, "x", "0.1.0", ext, bundlePath, nil); err != nil {
+		t.Fatalf("BuildSubmission: %v", err)
+	}
+	if !branchHasCompleteSubmission(checkout, "publish/x-v0.1.0", "x", "0.1.0") {
+		t.Error("expected a branch with a committed extension.yaml to report true")
+	}
+}
+
+func TestDeleteLocalBranch(t *testing.T) {
+	checkout := initTestRepo(t)
+	runGitCmd(t, checkout, "checkout", "-b", "publish/x-v0.1.0")
+	runGitCmd(t, checkout, "checkout", "-")
+
+	if !branchExistsLocally(checkout, "publish/x-v0.1.0") {
+		t.Fatal("expected branch to exist before deletion")
+	}
+	if err := deleteLocalBranch(checkout, "publish/x-v0.1.0"); err != nil {
+		t.Fatalf("deleteLocalBranch: %v", err)
+	}
+	if branchExistsLocally(checkout, "publish/x-v0.1.0") {
+		t.Error("expected branch to be gone after deleteLocalBranch")
+	}
+}
+
 func gitRevParse(t *testing.T, dir, ref string) string {
 	t.Helper()
 	out, err := exec.Command("git", "-C", dir, "rev-parse", ref).Output()
