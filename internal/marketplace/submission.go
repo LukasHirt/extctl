@@ -171,6 +171,27 @@ func branchExistsLocally(checkout, branch string) bool {
 	return err == nil && len(strings.TrimSpace(string(out))) > 0
 }
 
+// branchHasCompleteSubmission reports whether branch's tip already contains
+// extensions/<appID>/releases/<version>/extension.yaml. Used to tell a fully
+// staged submission (skip — a human should approve or retry-screenshots it)
+// apart from a branch a prior `extctl publish` run created but never
+// finished (e.g. it crashed after `checkout -b` but before downloading the
+// bundle and committing) — the latter has nothing worth preserving, so
+// Run re-stages it instead of leaving a dead, unstageable branch behind.
+func branchHasCompleteSubmission(checkout, branch, appID, version string) bool {
+	relPath := filepath.Join("extensions", appID, "releases", version, "extension.yaml")
+	err := exec.Command("git", "-C", checkout, "cat-file", "-e", branch+":"+relPath).Run()
+	return err == nil
+}
+
+// deleteLocalBranch force-deletes branch in checkout — used by Run's --force
+// path to discard a previously staged submission before re-staging from
+// scratch. Not an error if branch has commits BuildSubmission's later
+// checkout -b wouldn't otherwise create fresh (git branch -D, not -d).
+func deleteLocalBranch(checkout, branch string) error {
+	return runGit(checkout, "branch", "-D", branch)
+}
+
 func runGit(checkout string, args ...string) error {
 	cmd := exec.Command("git", append([]string{"-C", checkout}, args...)...)
 	out, err := cmd.CombinedOutput()

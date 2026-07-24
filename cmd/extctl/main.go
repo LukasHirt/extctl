@@ -812,6 +812,7 @@ the target repo's git (user.signingkey).`,
 var (
 	publishDryRun bool
 	publishID     string
+	publishForce  bool
 )
 
 var publishCmd = &cobra.Command{
@@ -839,12 +840,21 @@ release when one exists; otherwise tags fall back to Claude inference from
 package.json/README (staged with no tags at all, flagged in the summary, if
 that also fails), and minOCIS falls back to the latest stable oCIS release
 that existed on or before the extension's first commit date (a heuristic,
-flagged in the summary; left unset if that turns up nothing either).`,
+flagged in the summary; left unset if that turns up nothing either).
+
+An extension already staged locally (publish/<app-id>-v<version> exists but
+has no open PR yet) is skipped by default — use "approve" or
+"retry-screenshots" on it instead. Use --force with --id to discard that
+staged branch and redo the download/screenshots/tag+minOCIS resolution from
+scratch. A branch a prior run created but never finished committing to
+(e.g. it crashed mid-download) is always re-staged automatically, with or
+without --force.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		summary, err := marketplace.Run(marketplace.Options{
 			Config: cfg,
 			DryRun: publishDryRun,
 			OnlyID: publishID,
+			Force:  publishForce,
 		}, os.Stdout)
 		if summary != nil {
 			for _, f := range summary.Failed {
@@ -957,6 +967,8 @@ func init() {
 		"list extensions that would be staged without downloading, capturing screenshots, or committing anything")
 	publishCmd.Flags().StringVar(&publishID, "id", "",
 		"stage only this extension (app-id without the web-app- prefix, e.g. draw-io)")
+	publishCmd.Flags().BoolVar(&publishForce, "force", false,
+		"discard an already-staged local branch and re-stage from scratch (requires --id)")
 
 	statsCmd.Flags().IntVar(&statsDays, "days", 30,
 		"number of days of history to include in pipeline and cost sections")
