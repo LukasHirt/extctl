@@ -120,6 +120,35 @@ func TestListPendingSubmissions_None(t *testing.T) {
 	}
 }
 
+func TestBranchHasScreenshots(t *testing.T) {
+	upstream := initTestRepo(t)
+	runGitCmd(t, upstream, "branch", "-M", "master")
+	checkout := t.TempDir()
+	runGitCmd(t, checkout, "clone", "-q", upstream, ".")
+
+	newPendingBranch(t, checkout, "master", "no-shots", "0.1.0")
+	if branchHasScreenshots(checkout, "publish/no-shots-v0.1.0", "no-shots", "0.1.0") {
+		t.Error("expected a submission with no screenshots dir to report false")
+	}
+
+	runGitCmd(t, checkout, "config", "user.email", "test@example.com")
+	runGitCmd(t, checkout, "config", "user.name", "Test")
+	runGitCmd(t, checkout, "checkout", "master")
+	runGitCmd(t, checkout, "checkout", "-b", "publish/with-shots-v0.1.0")
+	shotsDir := filepath.Join(checkout, "extensions", "with-shots", "releases", "0.1.0", "screenshots")
+	if err := os.MkdirAll(shotsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(shotsDir, "01.png"), []byte("fake png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitCmd(t, checkout, "add", ".")
+	runGitCmd(t, checkout, "commit", "-q", "-m", "stage with-shots@0.1.0")
+	if !branchHasScreenshots(checkout, "publish/with-shots-v0.1.0", "with-shots", "0.1.0") {
+		t.Error("expected a submission with a screenshots dir to report true")
+	}
+}
+
 func TestResolvePendingBranch(t *testing.T) {
 	upstream := initTestRepo(t)
 	runGitCmd(t, upstream, "branch", "-M", "master")
