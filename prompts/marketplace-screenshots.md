@@ -140,7 +140,12 @@ You have Bash access, scoped to exactly one command — running the spec you
 just wrote. Nothing else: no `pnpm install`, no `git`, no arbitrary shell. A
 live oCIS instance is already up and reachable by the time you start (the
 env vars a normal test run needs, `BASE_URL_OCIS`/`OCIS_URL`, are already
-set).
+set) — do not try to confirm this yourself with `docker`, `curl`, or any
+other command; it is guaranteed by the time you're invoked, and no tool for
+checking it is available to you. If a Bash call outside the one command
+below is denied, that is expected, not a problem to solve: do not ask for
+permission, do not explain that you're blocked, and do not stop — just
+proceed straight to running the command below.
 
 After writing the file, run it:
 
@@ -178,4 +183,9 @@ fix it before stopping.
 **Forbidden:** `.only()`/`.skip()`, `expect(page).toBeDefined()` or any
 tautological assertion, writing or editing anything other than the one
 spec file named above, running anything via Bash other than the exact
-`pnpm playwright test` command above.
+`pnpm playwright test` command above — including any command meant only to
+check that oCIS is reachable first. Asking the user for permission to run a
+different command, or stopping to explain that a tool is unavailable, is
+also forbidden: this is a headless, unattended run, so nobody is there to
+answer. Treat a denied tool call as confirmation to move on, not a reason to
+pause.
