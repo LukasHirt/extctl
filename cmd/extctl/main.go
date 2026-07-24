@@ -817,7 +817,7 @@ var (
 
 var publishCmd = &cobra.Command{
 	Use:   "publish",
-	Short: "Stage marketplace submissions for review (see also: approve, retry-screenshots)",
+	Short: "Stage marketplace submissions for review (see also: approve, approve-all, retry-screenshots)",
 	Long: `Scan owncloud/web-extensions GitHub Releases for extensions with a
 completed release that is not yet present in owncloud/marketplace, and for
 each one: download its release bundle, generate extension.yaml, have Claude
@@ -831,6 +831,7 @@ open a PR yet. Review the printed summary (open the screenshots it points
 at), then run:
 
   extctl publish approve <app-id>            push the branch and open its PR
+  extctl publish approve-all                 do that for every staged submission
   extctl publish retry-screenshots <app-id>   recapture screenshots and retry
 
 An extension whose package.json has no license field is skipped with a
@@ -881,6 +882,32 @@ opening a duplicate.`,
 			return err
 		}
 		fmt.Println(prURL)
+		return nil
+	},
+}
+
+var publishApproveAllCmd = &cobra.Command{
+	Use:   "approve-all",
+	Short: "Push every staged submission and open its marketplace PR",
+	Long: `Run "extctl publish approve" for every locally-staged
+publish/<app-id>-v<version> branch in the marketplace checkout, instead of
+approving each one individually. One submission failing to push or open a PR
+does not stop the rest — every failure is printed, and approve-all exits
+non-zero if any submission failed.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		results, err := marketplace.ApproveAll(cfg, os.Stdout)
+		if err != nil {
+			return err
+		}
+		failed := 0
+		for _, r := range results {
+			if r.Err != nil {
+				failed++
+			}
+		}
+		if failed > 0 {
+			return fmt.Errorf("approve-all: %d of %d submission(s) failed", failed, len(results))
+		}
 		return nil
 	},
 }
@@ -974,7 +1001,7 @@ func init() {
 		"number of days of history to include in pipeline and cost sections")
 
 	slateCmd.AddCommand(slateStatusCmd, slateCarryoversCmd)
-	publishCmd.AddCommand(publishApproveCmd, publishRetryScreenshotsCmd)
+	publishCmd.AddCommand(publishApproveCmd, publishApproveAllCmd, publishRetryScreenshotsCmd)
 	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, approvePlanCmd, approveStagesCmd, releaseCmd, publishCmd, statsCmd, versionCmd, doctorCmd)
 }
 

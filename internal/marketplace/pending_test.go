@@ -80,6 +80,46 @@ func TestFindPendingVersions(t *testing.T) {
 	}
 }
 
+func TestListPendingSubmissions(t *testing.T) {
+	upstream := initTestRepo(t)
+	runGitCmd(t, upstream, "branch", "-M", "master")
+	checkout := t.TempDir()
+	runGitCmd(t, checkout, "clone", "-q", upstream, ".")
+
+	newPendingBranch(t, checkout, "master", "b-ext", "1.0.0")
+	newPendingBranch(t, checkout, "master", "a-ext", "0.2.0")
+	newPendingBranch(t, checkout, "master", "a-ext", "0.1.0")
+
+	subs, err := listPendingSubmissions(checkout)
+	if err != nil {
+		t.Fatalf("listPendingSubmissions: %v", err)
+	}
+	want := []PendingSubmission{
+		{AppID: "a-ext", Version: "0.1.0", Branch: "publish/a-ext-v0.1.0"},
+		{AppID: "a-ext", Version: "0.2.0", Branch: "publish/a-ext-v0.2.0"},
+		{AppID: "b-ext", Version: "1.0.0", Branch: "publish/b-ext-v1.0.0"},
+	}
+	if len(subs) != len(want) {
+		t.Fatalf("listPendingSubmissions = %+v, want %+v", subs, want)
+	}
+	for i := range want {
+		if subs[i] != want[i] {
+			t.Errorf("subs[%d] = %+v, want %+v", i, subs[i], want[i])
+		}
+	}
+}
+
+func TestListPendingSubmissions_None(t *testing.T) {
+	checkout := initTestRepo(t)
+	subs, err := listPendingSubmissions(checkout)
+	if err != nil {
+		t.Fatalf("listPendingSubmissions: %v", err)
+	}
+	if len(subs) != 0 {
+		t.Errorf("listPendingSubmissions = %+v, want none", subs)
+	}
+}
+
 func TestResolvePendingBranch(t *testing.T) {
 	upstream := initTestRepo(t)
 	runGitCmd(t, upstream, "branch", "-M", "master")
