@@ -817,7 +817,7 @@ var (
 
 var publishCmd = &cobra.Command{
 	Use:   "publish",
-	Short: "Stage marketplace submissions for review (see also: approve, approve-all, retry-screenshots)",
+	Short: "Stage marketplace submissions for review (see also: approve, approve-all, pending, retry-screenshots)",
 	Long: `Scan owncloud/web-extensions GitHub Releases for extensions with a
 completed release that is not yet present in owncloud/marketplace, and for
 each one: download its release bundle, generate extension.yaml, have Claude
@@ -830,6 +830,7 @@ branch under extensions/<app-id>/releases/<version>/ — but does NOT push or
 open a PR yet. Review the printed summary (open the screenshots it points
 at), then run:
 
+  extctl publish pending                     list everything staged and awaiting approval
   extctl publish approve <app-id>            push the branch and open its PR
   extctl publish approve-all                 do that for every staged submission
   extctl publish retry-screenshots <app-id>   recapture screenshots and retry
@@ -907,6 +908,38 @@ non-zero if any submission failed.`,
 		}
 		if failed > 0 {
 			return fmt.Errorf("approve-all: %d of %d submission(s) failed", failed, len(results))
+		}
+		return nil
+	},
+}
+
+var publishPendingCmd = &cobra.Command{
+	Use:   "pending",
+	Short: "List every locally-staged submission awaiting approval",
+	Long: `List every local publish/<app-id>-v<version> branch a prior
+"extctl publish" run staged in the marketplace checkout. For each one,
+shows whether it has screenshots and whether it already has a PR (open,
+closed, or merged) — so you can see at a glance what still needs
+"approve"/"approve-all", and what's already further along.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		details, err := marketplace.ListPending(cfg, os.Stdout)
+		if err != nil {
+			return err
+		}
+		if len(details) == 0 {
+			fmt.Println("no staged submissions pending approval")
+			return nil
+		}
+		for _, d := range details {
+			shots := "no screenshots"
+			if d.HasScreenshots {
+				shots = "has screenshots"
+			}
+			pr := "no PR yet"
+			if d.PRURL != "" {
+				pr = fmt.Sprintf("%s PR: %s", d.PRState, d.PRURL)
+			}
+			fmt.Printf("%s@%s  %s  %s  %s\n  review: %s\n", d.AppID, d.Version, d.Branch, shots, pr, d.ReviewDir)
 		}
 		return nil
 	},
@@ -1001,7 +1034,7 @@ func init() {
 		"number of days of history to include in pipeline and cost sections")
 
 	slateCmd.AddCommand(slateStatusCmd, slateCarryoversCmd)
-	publishCmd.AddCommand(publishApproveCmd, publishApproveAllCmd, publishRetryScreenshotsCmd)
+	publishCmd.AddCommand(publishApproveCmd, publishApproveAllCmd, publishPendingCmd, publishRetryScreenshotsCmd)
 	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, approvePlanCmd, approveStagesCmd, releaseCmd, publishCmd, statsCmd, versionCmd, doctorCmd)
 }
 

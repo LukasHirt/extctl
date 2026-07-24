@@ -210,6 +210,66 @@ func ApproveAll(cfg *config.Config, w io.Writer) ([]ApproveAllResult, error) {
 	return results, nil
 }
 
+// PendingDetail is one locally-staged submission with enough state to
+// decide what to do with it next — reported by extctl publish pending.
+type PendingDetail struct {
+	AppID          string
+	Version        string
+	Branch         string
+	HasScreenshots bool
+	PRURL          string // "" if no PR exists yet for Branch
+	PRState        string // "" if PRURL is ""; otherwise "OPEN", "CLOSED", or "MERGED"
+	ReviewDir      string
+}
+
+// branchHasScreenshots reports whether branch's tip has any file under
+// extensions/<appID>/releases/<version>/screenshots/ — the same "does this
+// submission have a screenshots dir" check BuildSubmission/
+// AmendSubmissionScreenshots leave behind, read back via git so ListPending
+// doesn't need checkout to be sitting on that branch already.
+func branchHasScreenshots(checkout, branch, appID, version string) bool {
+	relDir := filepath.Join("extensions", appID, "releases", version, "screenshots")
+	out, err := gitpkg.Output(checkout, "ls-tree", "--name-only", branch+":"+relDir)
+	return err == nil && len(strings.TrimSpace(string(out))) > 0
+}
+
+// ListPending reports every locally-staged publish/<app-id>-v<version>
+// branch in cfg.MarketplaceRepo.Checkout, along with whether it has
+// screenshots and whether it already has a PR (open, closed, or merged) —
+// so a human can see everything awaiting `extctl publish approve` (or
+// `approve-all`) without checking each one individually. A PR lookup
+// failure for one submission doesn't fail the whole listing; that
+// submission's PRURL/PRState are just left empty and the caller should
+// treat them as unknown, not "no PR".
+func ListPending(cfg *config.Config, w io.Writer) ([]PendingDetail, error) {
+	printf := func(format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
+	checkout := cfg.MarketplaceRepo.Checkout
+
+	subs, err := listPendingSubmissions(checkout)
+	if err != nil {
+		return nil, err
+	}
+
+	details := make([]PendingDetail, 0, len(subs))
+	for _, s := range subs {
+		d := PendingDetail{
+			AppID:          s.AppID,
+			Version:        s.Version,
+			Branch:         s.Branch,
+			HasScreenshots: branchHasScreenshots(checkout, s.Branch, s.AppID, s.Version),
+			ReviewDir:      filepath.Join(cfg.RunsDir, "publish", s.AppID+"-"+s.Version),
+		}
+		if existing, err := findExistingPR(cfg.MarketplaceRepo.Remote, s.Branch); err != nil {
+			printf("  warning: could not check for an existing PR for %s@%s: %v\n", s.AppID, s.Version, err)
+		} else if existing != nil {
+			d.PRURL = existing.URL
+			d.PRState = existing.State
+		}
+		details = append(details, d)
+	}
+	return details, nil
+}
+
 // readExtensionYAMLFile reads and parses an extension.yaml from disk —
 // used to recover a staged submission's already-resolved fields (license,
 // tags, minOCIS, authors, ...) in Approve/RetryScreenshots without
