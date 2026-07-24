@@ -125,6 +125,91 @@ func ResolvePendingBranch(checkout, idArg string) (appID, version, branch string
 	return appID, version, branch, nil
 }
 
+// PendingSubmission identifies one locally-staged
+// publish/<app-id>-v<version> branch in the marketplace checkout.
+type PendingSubmission struct {
+	AppID   string
+	Version string
+	Branch  string
+}
+
+// listPendingSubmissions lists every local publish/<app-id>-v<version>
+// branch in checkout, sorted by AppID then version ascending — the same
+// order Scan/Run process extensions in.
+func listPendingSubmissions(checkout string) ([]PendingSubmission, error) {
+	out, err := gitpkg.Output(checkout, "branch", "--list",
+		"publish/*", "--format=%(refname:short)")
+	if err != nil {
+		return nil, fmt.Errorf("list pending branches: %w", err)
+	}
+	var subs []PendingSubmission
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// splitTag expects "<app-id>-v<version>" (it splits release tags of
+		// that same shape) — a publish branch name is exactly that after
+		// stripping the "publish/" prefix.
+		appID, version, ok := splitTag(strings.TrimPrefix(line, "publish/"))
+		if !ok {
+			continue
+		}
+		subs = append(subs, PendingSubmission{AppID: appID, Version: version, Branch: line})
+	}
+	sort.Slice(subs, func(i, j int) bool {
+		if subs[i].AppID != subs[j].AppID {
+			return subs[i].AppID < subs[j].AppID
+		}
+		return compareVersions(subs[i].Version, subs[j].Version) < 0
+	})
+	return subs, nil
+}
+
+// ApproveAllResult is the outcome of one submission's Approve call within an
+// ApproveAll batch.
+type ApproveAllResult struct {
+	AppID   string
+	Version string
+	PRURL   string // empty if Err is set
+	Err     error
+}
+
+// ApproveAll runs Approve for every locally-staged
+// publish/<app-id>-v<version> branch in cfg.MarketplaceRepo.Checkout, so a
+// batch of staged submissions doesn't need approving one `extctl publish
+// approve <id>` call at a time. A single submission failing (e.g. Approve's
+// own PR-creation call erroring) does not stop the rest — each is recorded
+// in the returned results and the caller decides what to report.
+func ApproveAll(cfg *config.Config, w io.Writer) ([]ApproveAllResult, error) {
+	printf := func(format string, a ...any) { _, _ = fmt.Fprintf(w, format, a...) }
+	checkout := cfg.MarketplaceRepo.Checkout
+
+	subs, err := listPendingSubmissions(checkout)
+	if err != nil {
+		return nil, err
+	}
+	if len(subs) == 0 {
+		printf("no staged submissions pending approval\n")
+		return nil, nil
+	}
+
+	results := make([]ApproveAllResult, 0, len(subs))
+	for _, s := range subs {
+		idArg := s.AppID + "@" + s.Version
+		printf("approve %s…\n", idArg)
+		prURL, err := Approve(cfg, idArg, w)
+		if err != nil {
+			printf("failed  %s: %v\n", idArg, err)
+			results = append(results, ApproveAllResult{AppID: s.AppID, Version: s.Version, Err: err})
+			continue
+		}
+		printf("approved %s — %s\n", idArg, prURL)
+		results = append(results, ApproveAllResult{AppID: s.AppID, Version: s.Version, PRURL: prURL})
+	}
+	return results, nil
+}
+
 // readExtensionYAMLFile reads and parses an extension.yaml from disk —
 // used to recover a staged submission's already-resolved fields (license,
 // tags, minOCIS, authors, ...) in Approve/RetryScreenshots without
