@@ -163,6 +163,55 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
     off the checked-out `extension.yaml`. New screenshots/captions are
     amended onto the existing commit (`git commit --amend`), so `approve`
     still ever pushes exactly one commit per submission.
+  - `extctl publish verify-minocis <app-id>[@<version>]` — re-runs, on an
+    already-staged submission, the same e2e minOCIS verification the main
+    staging step already runs automatically (see below) — for when it was
+    skipped at staging time (`--skip-minocis-verify`, or Docker wasn't
+    available then), or the extension's own e2e tests changed since.
+    Updates `extension.yaml` and amends it onto the existing commit
+    (`AmendSubmissionMinOCIS`) only if the verified value differs from what
+    was staged; no-op otherwise. Must run before `approve` — `approve` is
+    idempotent (returns the existing PR's URL instead of re-pushing once
+    one is open), so an amend after that point never reaches a live PR.
+
+  **minOCIS e2e verification** (automatic during staging, by default):
+  root cause addressed: `ResolveMinOCIS`'s "reuse from the previous
+  release" tier was originally documented as reusing an "already-approved"
+  value, but nothing ever re-approved it — it just carried forward release
+  after release, unexamined, which is exactly `owncloud/marketplace#240`
+  (minOCIS constant across an extension's entire version range regardless
+  of what a newer release actually needs). `stageOne` now runs the
+  extension's own e2e Playwright suite against real `owncloud/ocis` Docker
+  images (`verifyMinOCISDuringStaging`/`verifyMinOCISBundle`,
+  `internal/marketplace/min_ocis_verify.go`) before minOCIS is ever
+  committed, bisecting (`BisectMinOCIS`, `min_ocis_bisect.go`) over every
+  stable "X.Y.Z" tag Docker Hub actually has (`AvailableOCISImageVersions`,
+  `ocis_versions.go` — Docker Hub is missing an entire major series, oCIS
+  6.x, confirmed to have zero images of any kind; the candidate list is
+  fetched live rather than hardcoded, so any such gap is just skipped over,
+  never a hard failure) to find the lowest version the tests actually pass
+  against. The search seeds from `ResolveMinOCIS`'s heuristic guess and
+  checks that ONE version first — bisection only runs (and only searches
+  ABOVE the seed, never below) if that no longer passes — so the common
+  case (floor hasn't moved) costs one Docker bring-up/teardown cycle, not
+  several; a later version of the same extension staged in the same batch
+  seeds from an earlier sibling's just-verified value
+  (`runMetadataCache.recordMinOCIS`), not the original unverified guess.
+  Reuses `pinExtensionSourceToRelease`/`PreparePlaywrightRun` from the
+  screenshot-capture path to get the exact released source+bundle in
+  place, and `freshOCISUpWithImage` (a `freshOCISUp` variant taking an
+  `OCIS_IMAGE` override — `docker-compose.yml`'s `ocis` service already
+  reads that env var) to bring up each candidate version. Serialized via
+  the same `withE2ELock` the gate's e2e stage and screenshot capture use.
+
+  Best-effort, same philosophy as screenshot capture: a Docker/infra
+  failure, or the extension failing its e2e tests against every available
+  oCIS image, is logged and staging falls back to the unverified heuristic
+  value rather than aborting the submission — requiring Docker to succeed
+  would make an otherwise fast, reliable command newly fragile. Opt out
+  entirely with `extctl publish --skip-minocis-verify` (e.g. no Docker in
+  this environment, or a quick dry run) and run `verify-minocis` on the
+  staged branch later instead.
 
   **Staging step:** downloads the release's zip asset via `gh release
   download` and uses it directly as `bundle.zip` (already byte-identical to
@@ -175,9 +224,12 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
   placeholder), and minOCIS — never guessed by Claude, since it's a hard
   compatibility claim — falls back to `InferMinOCISFromHistory` (highest
   stable `owncloud/ocis` release before the extension's first commit date) or
-  is left unset. None of this inferred/heuristic context goes into the PR
-  body — `printReviewNotes` prints it to the terminal at staging time, since
-  a human reviews it before `approve` ever runs.
+  is left unset. That value is then, by default, automatically confirmed or
+  corrected by actually running the extension's e2e tests against real oCIS
+  images before it's ever committed — see "minOCIS e2e verification" below.
+  None of this inferred/heuristic context goes into the PR body —
+  `printReviewNotes` prints it to the terminal at staging time, since a
+  human reviews it before `approve` ever runs.
 
   Screenshots come from a fresh, dedicated `tests/e2e/marketplace-
   screenshots.spec.ts` Claude writes per extension (`marketplace-

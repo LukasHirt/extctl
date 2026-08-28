@@ -103,13 +103,27 @@ const (
 	MinOCISSourceThisRun MinOCISSource = "this-run"
 	MinOCISSourceHistory MinOCISSource = "history-inferred"
 	MinOCISSourceNone    MinOCISSource = "none"
+	// MinOCISSourceE2EVerified marks a value confirmed by actually running
+	// the extension's e2e tests against real oCIS images (VerifyMinOCIS /
+	// stageOne's automatic verification pass) — the one source that is an
+	// actual compatibility check rather than a proxy for one.
+	MinOCISSourceE2EVerified MinOCISSource = "e2e-verified"
 )
 
 // ResolveMinOCIS decides minOCIS for a submission, trying progressively less
 // reliable sources and never erroring:
 //
 //  1. Reuse minOCIS from prev (this extension's own most recent prior
-//     marketplace release, if any) — already human-approved.
+//     marketplace release, if any) — carried forward, NOT re-verified. This
+//     was originally documented as "already human-approved", but in
+//     practice a value chosen for release N just keeps propagating to every
+//     later release unexamined, which is exactly the bug reported as
+//     owncloud/marketplace#240: minOCIS staying constant across an
+//     extension's entire version range regardless of what a newer release
+//     actually requires. VerifyMinOCIS (`extctl publish verify-minocis`) is
+//     the way to actually confirm — or correct — this value by running the
+//     extension's own e2e tests against real oCIS images, rather than
+//     trusting the carry-forward blindly.
 //  2. Infer it from history (InferMinOCISFromHistory): the latest stable
 //     oCIS release that existed on or before this extension's first commit
 //     in web-extensions — a deterministic, git-derived proxy, not a
@@ -120,8 +134,9 @@ const (
 //     or a global config constant: it's a hard compatibility claim, not a
 //     soft categorization, so a wrong value is worse than an absent one.
 //
-// FormatPRBody flags sources 2 and 3 in the PR for a human to sanity-check
-// or fill in.
+// printReviewNotes prints sources 1-3 to the terminal at staging time for a
+// human to sanity-check before approval; VerifyMinOCIS is the step that
+// actually replaces a guess with a verified answer.
 func ResolveMinOCIS(cfg *config.Config, appID string, prev *ExtensionYAML, printf func(string, ...any)) (string, MinOCISSource) {
 	if prev != nil && prev.MinOCIS != "" {
 		return prev.MinOCIS, MinOCISSourcePreviousRelease
