@@ -23,6 +23,12 @@ type Options struct {
 	// is never what's wanted. Has no effect on an extension that's already
 	// published or already has an open PR; those are never re-staged.
 	Force bool
+	// SkipMinOCISVerify skips stageOne's automatic e2e minOCIS verification
+	// (default: on), staging with the unverified heuristic value instead —
+	// e.g. for a quick dry run, or an environment without Docker. The
+	// standalone `extctl publish verify-minocis` command remains available
+	// to run verification later regardless of this flag.
+	SkipMinOCISVerify bool
 }
 
 // StagedResult is one extension whose submission was built and committed
@@ -156,7 +162,7 @@ func Run(opts Options, w io.Writer) (*Summary, error) {
 
 		attempted++
 		printf("stage   %s@%s…\n", r.AppID, r.Version)
-		staged, err := stageOne(cfg, r, metadata, printf)
+		staged, err := stageOne(cfg, r, metadata, !opts.SkipMinOCISVerify, printf)
 		if err != nil {
 			printf("failed  %s@%s: %v\n", r.AppID, r.Version, err)
 			summary.Failed = append(summary.Failed, FailedResult{AppID: r.AppID, Version: r.Version, Err: err})
@@ -341,7 +347,13 @@ func captureScreenshotsWithRetry(cfg *config.Config, r Result, bundlePath, revie
 // is durable (not an OS temp dir) precisely so it survives until a human
 // gets around to reviewing it and running `extctl publish approve` or
 // `retry-screenshots`, possibly much later or in a separate process.
-func stageOne(cfg *config.Config, r Result, metadata *runMetadataCache, printf func(string, ...any)) (*StagedResult, error) {
+//
+// verifyMinOCIS controls whether the heuristic minOCIS guess is
+// additionally confirmed by actually running the extension's e2e tests
+// against real oCIS images (see verifyMinOCISDuringStaging) before it's
+// written into extension.yaml — on by default, Options.SkipMinOCISVerify
+// turns it off for this whole Run.
+func stageOne(cfg *config.Config, r Result, metadata *runMetadataCache, verifyMinOCIS bool, printf func(string, ...any)) (*StagedResult, error) {
 	reviewDir := filepath.Join(cfg.RunsDir, "publish", r.AppID+"-"+r.Version)
 
 	bundlePath, err := DownloadBundle(cfg.TargetRepo.Remote, r.Tag, r.AppID, r.AssetName, reviewDir)
@@ -362,6 +374,12 @@ func stageOne(cfg *config.Config, r Result, metadata *runMetadataCache, printf f
 	}
 	tags, tagSource := metadata.resolveTags(cfg, r.AppID, prev, printf)
 	minOCIS, minOCISSource := metadata.resolveMinOCIS(cfg, r.AppID, prev, printf)
+
+	if verifyMinOCIS {
+		minOCIS, minOCISSource = verifyMinOCISDuringStaging(cfg, r, metadata, bundlePath, minOCIS, minOCISSource, printf)
+	} else {
+		printf("  minOCIS: skipping e2e verification (--skip-minocis-verify)\n")
+	}
 	printReviewNotes(printf, r.AppID, tags, tagSource, minOCIS, minOCISSource)
 
 	ext, err := BuildExtensionYAML(cfg, r.AppID, r.Version, pkg, tags, minOCIS, captions)
@@ -401,13 +419,15 @@ func printReviewNotes(printf func(string, ...any), appID string, tags []string, 
 		printf("  tags: none — marketplace CI will reject this until at least one is added\n")
 	}
 	switch minOCISSource {
+	case MinOCISSourceE2EVerified:
+		printf("  minOCIS: %s (verified via e2e tests against real oCIS images)\n", minOCIS)
 	case MinOCISSourcePreviousRelease:
-		printf("  minOCIS: %s (reused from a previously-published release)\n", minOCIS)
+		printf("  minOCIS: %s (reused from a previously-published release — not re-verified; run `extctl publish verify-minocis %s` to confirm)\n", minOCIS, appID)
 	case MinOCISSourceThisRun:
 		printf("  minOCIS: %s (reused from another version staged in this same run)\n", minOCIS)
 	case MinOCISSourceHistory:
-		printf("  minOCIS: %s (inferred from oCIS release history — not a verified compatibility check)\n", minOCIS)
+		printf("  minOCIS: %s (inferred from oCIS release history — not a verified compatibility check; run `extctl publish verify-minocis %s` to confirm)\n", minOCIS, appID)
 	default:
-		printf("  minOCIS: unset (optional)\n")
+		printf("  minOCIS: unset (optional) — run `extctl publish verify-minocis %s` to determine it empirically\n", appID)
 	}
 }

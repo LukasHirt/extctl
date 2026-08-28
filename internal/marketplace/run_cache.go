@@ -62,3 +62,13 @@ func (c *runMetadataCache) resolveMinOCIS(cfg *config.Config, appID string, prev
 	c.minOCIS[appID] = cachedMinOCIS{value: value, source: source}
 	return value, source
 }
+
+// recordMinOCIS overwrites this run's cached minOCIS for appID — used after
+// stageOne's automatic e2e verification upgrades a heuristic guess to a
+// confirmed value, so a LATER version of the same extension staged in this
+// same batch seeds its own verification from the confirmed value (a single
+// check, via BisectMinOCIS's seed fast path) instead of the original
+// unverified guess.
+func (c *runMetadataCache) recordMinOCIS(appID, value string, source MinOCISSource) {
+	c.minOCIS[appID] = cachedMinOCIS{value: value, source: source}
+}

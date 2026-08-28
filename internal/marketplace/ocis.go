@@ -300,6 +300,20 @@ func runPlaywrightDirect(extDir, project, reportPath string) error {
 // down+up costs more wall-clock time but is the one bring-up path already
 // proven correct by the gate's own e2e stage.
 func freshOCISUp(mainCheckout string) error {
+	return freshOCISUpEnv(mainCheckout, nil)
+}
+
+// freshOCISUpWithImage is freshOCISUp with the oCIS image pinned to image
+// via the OCIS_IMAGE env var docker-compose.yml already reads
+// (`${OCIS_IMAGE:-owncloud/ocis-rolling:latest}`) — used by
+// checkExtensionAgainstOCIS to test a specific historical oCIS release,
+// unlike every other caller in this package (screenshot capture, the gate's
+// e2e stage), which always wants the default rolling image.
+func freshOCISUpWithImage(mainCheckout, image string) error {
+	return freshOCISUpEnv(mainCheckout, []string{"OCIS_IMAGE=" + image})
+}
+
+func freshOCISUpEnv(mainCheckout string, extraEnv []string) error {
 	if err := ensureExternalSitesManifest(mainCheckout); err != nil {
 		return err
 	}
@@ -310,6 +324,9 @@ func freshOCISUp(mainCheckout string) error {
 
 	upCmd := exec.Command("docker", "compose", "up", "-d")
 	upCmd.Dir = mainCheckout
+	if len(extraEnv) > 0 {
+		upCmd.Env = append(os.Environ(), extraEnv...)
+	}
 	out, err := upCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("docker compose up -d: %w\n%s", err, strings.TrimSpace(string(out)))

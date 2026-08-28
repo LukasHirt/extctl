@@ -56,7 +56,7 @@ var rootCmd = &cobra.Command{
 		needsCheckout := map[string]bool{
 			"gen": true, "poll": true, "gate": true,
 			"approve-plan": true, "approve-stages": true, "release": true,
-			"publish": true, "approve": true, "retry-screenshots": true,
+			"publish": true, "approve": true, "retry-screenshots": true, "verify-minocis": true,
 		}
 		if needsCheckout[cmd.Name()] {
 			if err := gitpkg.EnsureCheckout(cfg.TargetRepo.Remote, cfg.TargetRepo.Checkout, cfg.DefaultBranch); err != nil {
@@ -66,7 +66,7 @@ var rootCmd = &cobra.Command{
 		// publish and its approve/retry-screenshots subcommands are the only
 		// ones that also need a second repo checked out — they act on
 		// owncloud/marketplace, not TargetRepo.
-		needsMarketplaceCheckout := map[string]bool{"publish": true, "approve": true, "retry-screenshots": true}
+		needsMarketplaceCheckout := map[string]bool{"publish": true, "approve": true, "retry-screenshots": true, "verify-minocis": true}
 		if needsMarketplaceCheckout[cmd.Name()] {
 			if err := gitpkg.EnsureCheckout(cfg.MarketplaceRepo.Remote, cfg.MarketplaceRepo.Checkout, cfg.MarketplaceRepo.DefaultBranch); err != nil {
 				return fmt.Errorf("ensure marketplace repo checkout: %w", err)
@@ -810,9 +810,10 @@ the target repo's git (user.signingkey).`,
 // --- publish command ---
 
 var (
-	publishDryRun bool
-	publishID     string
-	publishForce  bool
+	publishDryRun            bool
+	publishID                string
+	publishForce             bool
+	publishSkipMinOCISVerify bool
 )
 
 var publishCmd = &cobra.Command{
@@ -834,15 +835,25 @@ at), then run:
   extctl publish approve <app-id>            push the branch and open its PR
   extctl publish approve-all                 do that for every staged submission
   extctl publish retry-screenshots <app-id>   recapture screenshots and retry
+  extctl publish verify-minocis <app-id>      re-run e2e minOCIS verification later
 
 An extension whose package.json has no license field is skipped with a
-clear error rather than published with a guessed license. Tags and minOCIS
-are reused verbatim from this extension's most recent prior marketplace
-release when one exists; otherwise tags fall back to Claude inference from
+clear error rather than published with a guessed license. Tags are reused
+verbatim from this extension's most recent prior marketplace release when
+one exists; otherwise they fall back to Claude inference from
 package.json/README (staged with no tags at all, flagged in the summary, if
-that also fails), and minOCIS falls back to the latest stable oCIS release
-that existed on or before the extension's first commit date (a heuristic,
-flagged in the summary; left unset if that turns up nothing either).
+that also fails).
+
+minOCIS starts from the same kind of guess — reused from the previous
+release, or the latest stable oCIS release that existed on or before the
+extension's first commit date — but by default that guess is then
+automatically confirmed (or corrected) by actually running the extension's
+own e2e tests against real oCIS Docker images before it's ever committed
+(requires Docker; skip with --skip-minocis-verify, e.g. in an environment
+without Docker, and re-run it later with "verify-minocis"). If the
+extension fails its e2e tests against every available oCIS image, or Docker
+itself isn't available, staging falls back to the unverified guess rather
+than failing the whole submission — flagged in the summary either way.
 
 An extension already staged locally (publish/<app-id>-v<version> exists but
 has no open PR yet) is skipped by default — use "approve" or
@@ -853,10 +864,11 @@ scratch. A branch a prior run created but never finished committing to
 without --force.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		summary, err := marketplace.Run(marketplace.Options{
-			Config: cfg,
-			DryRun: publishDryRun,
-			OnlyID: publishID,
-			Force:  publishForce,
+			Config:            cfg,
+			DryRun:            publishDryRun,
+			OnlyID:            publishID,
+			Force:             publishForce,
+			SkipMinOCISVerify: publishSkipMinOCISVerify,
 		}, os.Stdout)
 		if summary != nil {
 			for _, f := range summary.Failed {
@@ -962,6 +974,32 @@ it; use <app-id>@<version> to disambiguate.`,
 	},
 }
 
+var publishVerifyMinOCISCmd = &cobra.Command{
+	Use:   "verify-minocis <app-id>[@<version>]",
+	Short: "Empirically verify minOCIS by running e2e tests against real oCIS images",
+	Long: `"extctl publish" already runs this verification automatically for every
+newly staged submission (skip it there with --skip-minocis-verify). Use
+this command to run it again later — e.g. it was skipped at staging time,
+Docker wasn't available then, or the extension's own e2e tests changed
+since.
+
+Determine minOCIS for a staged submission by actually running its e2e
+Playwright tests against real owncloud/ocis Docker images, instead of
+trusting the carried-forward or history-inferred guess it was staged with.
+Starts from the submission's current minOCIS as a seed — checked first —
+and only bisects further (upward only, never below the seed) if that no
+longer passes, so the common case of an unchanged floor costs one Docker
+bring-up/teardown cycle, not several. Updates extension.yaml and amends it
+onto the existing commit if the verified value differs from what was
+staged; no-ops otherwise. <app-id> alone works if exactly one version is
+staged for it; use <app-id>@<version> to disambiguate. Requires Docker.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, err := marketplace.VerifyMinOCIS(cfg, args[0], os.Stdout)
+		return err
+	},
+}
+
 // --- doctor command ---
 
 var doctorCmd = &cobra.Command{
@@ -1027,6 +1065,8 @@ func init() {
 		"list extensions that would be staged without downloading, capturing screenshots, or committing anything")
 	publishCmd.Flags().StringVar(&publishID, "id", "",
 		"stage only this extension (app-id without the web-app- prefix, e.g. draw-io)")
+	publishCmd.Flags().BoolVar(&publishSkipMinOCISVerify, "skip-minocis-verify", false,
+		"stage with the unverified heuristic minOCIS guess instead of automatically e2e-verifying it against real oCIS images (requires Docker)")
 	publishCmd.Flags().BoolVar(&publishForce, "force", false,
 		"discard an already-staged local branch and re-stage from scratch (requires --id)")
 
@@ -1034,7 +1074,7 @@ func init() {
 		"number of days of history to include in pipeline and cost sections")
 
 	slateCmd.AddCommand(slateStatusCmd, slateCarryoversCmd)
-	publishCmd.AddCommand(publishApproveCmd, publishApproveAllCmd, publishPendingCmd, publishRetryScreenshotsCmd)
+	publishCmd.AddCommand(publishApproveCmd, publishApproveAllCmd, publishPendingCmd, publishRetryScreenshotsCmd, publishVerifyMinOCISCmd)
 	rootCmd.AddCommand(genCmd, slateCmd, pollCmd, gateCmd, approvePlanCmd, approveStagesCmd, releaseCmd, publishCmd, statsCmd, versionCmd, doctorCmd)
 }
 

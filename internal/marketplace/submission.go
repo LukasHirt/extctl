@@ -137,6 +137,42 @@ func AmendSubmissionScreenshots(checkout, appID, version string, screenshotPaths
 	return runGit(checkout, "commit", "-s", "--amend", "--no-edit")
 }
 
+// AmendSubmissionMinOCIS rewrites minOCIS in the ALREADY CHECKED OUT
+// branch's extension.yaml and amends it onto the existing commit — mirrors
+// AmendSubmissionScreenshots's shape but for the field VerifyMinOCIS
+// updates instead. Every other field (tags, license, screenshots, ...) is
+// left untouched, read back from the file as-is.
+func AmendSubmissionMinOCIS(checkout, appID, version, minOCIS string) error {
+	relDir := filepath.Join("extensions", appID, "releases", version)
+	extPath := filepath.Join(checkout, relDir, "extension.yaml")
+
+	ext, err := readExtensionYAMLFile(extPath)
+	if err != nil {
+		return err
+	}
+	ext.MinOCIS = minOCIS
+
+	yamlBytes, err := yaml.Marshal(ext)
+	if err != nil {
+		return fmt.Errorf("marshal extension.yaml: %w", err)
+	}
+	if err := os.WriteFile(extPath, yamlBytes, 0o644); err != nil {
+		return fmt.Errorf("write extension.yaml: %w", err)
+	}
+
+	if err := runGit(checkout, "add", relDir); err != nil {
+		return err
+	}
+	changed, err := hasStagedChanges(checkout)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		return nil // e2e-verified value matched what was already staged
+	}
+	return runGit(checkout, "commit", "-s", "--amend", "--no-edit")
+}
+
 // hasStagedChanges reports whether checkout has any staged (index vs HEAD)
 // changes, using `git diff --cached --quiet` rather than string-matching
 // `git commit`'s "nothing to commit" message.
