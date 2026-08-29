@@ -215,16 +215,55 @@ extctl.example.yaml         # config template (copy to extctl.yaml, never commit
 
   **Staging step:** downloads the release's zip asset via `gh release
   download` and uses it directly as `bundle.zip` (already byte-identical to
-  what marketplace needs). `license`/`subtitle` come from that extension's
-  own `package.json` — no `license` field means the extension fails to stage
-  rather than getting a guessed value. `tags`/`minOCIS`
-  (`marketplace.ResolveTags`/`ResolveMinOCIS`) reuse the extension's most
-  recent prior marketplace release verbatim if one exists; otherwise tags
-  fall back to Claude inference (`infer-tags.md`) or are left unset (no
-  placeholder), and minOCIS — never guessed by Claude, since it's a hard
-  compatibility claim — falls back to `InferMinOCISFromHistory` (highest
-  stable `owncloud/ocis` release before the extension's first commit date) or
-  is left unset. That value is then, by default, automatically confirmed or
+  what marketplace needs). `license` comes from that extension's own
+  `package.json` — no `license` field means the extension fails to stage
+  rather than getting a guessed value (never reused from a prior release:
+  license is a legal claim about the actual code, which can genuinely change
+  release to release — see the AGPL-3.0→Apache-2.0 correction on several
+  extensions this repo's history already carries).
+
+  `name`/`subtitle`/`cover`/`tags`/`minOCIS`
+  (`BuildExtensionYAML`/`marketplace.ResolveTags`/`ResolveMinOCIS`) all
+  reuse the extension's most recent prior marketplace release verbatim when
+  one exists — this is the one tier every republish of an already-published
+  extension hits, and it's load-bearing: before this reuse existed at all
+  for name/subtitle/cover, `extctl publish` silently clobbered a human's
+  curated values back to its own guesses on every single republish (the
+  generator title-cases the app-id slug, which mangles "Draw.io" → "Draw
+  Io"/"JSON Viewer" → "Json Viewer", and takes subtitle from upstream
+  `package.json`'s description verbatim, which is routinely written for
+  npm/GitHub, not a public marketplace listing) — the exact bug
+  `owncloud/marketplace` issues #238/#240 reported for cover/minOCIS
+  specifically, caught the hard way across a real batch of PRs. `cover`
+  additionally requires the previous release's actual `cover.png` bytes to
+  fetch successfully (`previousCoverBytes`, reading real content via `git
+  show` + `git lfs smudge` rather than trusting the checkout's ambient
+  working-tree state) — `cover: true` is only ever set when those bytes
+  were actually retrieved, never from the previous release's own `cover`
+  flag alone, so a fetch failure can't silently commit a dangling
+  `cover: true` with no file behind it.
+
+  For an extension's first-ever submission (no prior release to reuse
+  from): tags fall back to Claude inference (`infer-tags.md`) or are left
+  unset (no placeholder); minOCIS — never guessed by Claude, since it's a
+  hard compatibility claim — falls back to `InferMinOCISFromHistory`
+  (highest stable `owncloud/ocis` release before the extension's first
+  commit date) or is left unset; name falls back to the humanized app-id
+  slug (`humanizeAppID`); subtitle falls back to `package.json`'s
+  description verbatim; cover is left unset (nothing to reuse from). All of
+  this is exactly what a human reviews via `printReviewNotes` before ever
+  running `approve` — see below.
+
+  `BuildSubmission` runs `git lfs install --local` before staging anything
+  — `cfg.MarketplaceRepo.Checkout` is `EnsureCheckout`'s hard-reset-only
+  clone, which never ran that itself, so without it `git add` on
+  `bundle.zip`/`cover.png`/screenshots committed raw bytes despite
+  `.gitattributes` marking those paths `filter=lfs` (`owncloud/marketplace
+  #238`, half of it — the other half, a CI gate in that repo to catch a
+  future regression, is out of scope here). Idempotent and safe to call on
+  every run.
+
+  minOCIS is then, by default, automatically confirmed or
   corrected by actually running the extension's e2e tests against real oCIS
   images before it's ever committed — see "minOCIS e2e verification" below.
   None of this inferred/heuristic context goes into the PR body —

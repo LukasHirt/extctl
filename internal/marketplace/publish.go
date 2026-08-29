@@ -380,14 +380,20 @@ func stageOne(cfg *config.Config, r Result, metadata *runMetadataCache, verifyMi
 	} else {
 		printf("  minOCIS: skipping e2e verification (--skip-minocis-verify)\n")
 	}
-	printReviewNotes(printf, r.AppID, tags, tagSource, minOCIS, minOCISSource)
 
-	ext, err := BuildExtensionYAML(cfg, r.AppID, r.Version, pkg, tags, minOCIS, captions)
+	coverBytes, err := previousCoverBytes(cfg.MarketplaceRepo.Checkout, cfg.MarketplaceRepo.DefaultBranch, r.AppID, prev)
+	if err != nil {
+		printf("  warning: could not fetch previous cover.png, submitting without one: %v\n", err)
+		coverBytes = nil
+	}
+	printReviewNotes(printf, r.AppID, tags, tagSource, minOCIS, minOCISSource, prev, len(coverBytes) > 0)
+
+	ext, err := BuildExtensionYAML(cfg, r.AppID, r.Version, pkg, tags, minOCIS, captions, prev, len(coverBytes) > 0)
 	if err != nil {
 		return nil, err
 	}
 
-	branch, err := BuildSubmission(cfg, cfg.MarketplaceRepo.Checkout, r.AppID, r.Version, ext, bundlePath, screenshotPaths)
+	branch, err := BuildSubmission(cfg, cfg.MarketplaceRepo.Checkout, r.AppID, r.Version, ext, bundlePath, screenshotPaths, coverBytes)
 	if err != nil {
 		return nil, fmt.Errorf("build submission: %w", err)
 	}
@@ -406,8 +412,25 @@ func stageOne(cfg *config.Config, r Result, metadata *runMetadataCache, verifyMi
 // itself. Now that a human reviews before ever running `approve`, there's
 // no need to carry that context into the PR for a marketplace maintainer
 // who has no way to act on it anyway — see FormatPRBody.
-func printReviewNotes(printf func(string, ...any), appID string, tags []string, tagSource TagSource, minOCIS string, minOCISSource MinOCISSource) {
-	printf("  name: %q (humanized from the app id — not authored, check it reads well)\n", humanizeAppID(appID))
+func printReviewNotes(printf func(string, ...any), appID string, tags []string, tagSource TagSource, minOCIS string, minOCISSource MinOCISSource, prev *ExtensionYAML, hasCoverBytes bool) {
+	if prev != nil && prev.Name != "" {
+		printf("  name: %q (reused from a previously-published release)\n", prev.Name)
+	} else {
+		printf("  name: %q (humanized from the app id — not authored, check it reads well)\n", humanizeAppID(appID))
+	}
+	if prev != nil && prev.Subtitle != "" {
+		printf("  subtitle: %q (reused from a previously-published release)\n", prev.Subtitle)
+	} else {
+		printf("  subtitle: the package.json description, verbatim — sanity-check it reads well publicly\n")
+	}
+	switch {
+	case hasCoverBytes:
+		printf("  cover: reused from a previously-published release\n")
+	case prev != nil && prev.Cover:
+		printf("  cover: previous release has one, but fetching it failed — submitting without a cover this time (see the warning above)\n")
+	default:
+		printf("  cover: none (no previously-published release has one either)\n")
+	}
 	switch tagSource {
 	case TagSourcePreviousRelease:
 		printf("  tags: %s (reused from a previously-published release)\n", strings.Join(tags, ", "))

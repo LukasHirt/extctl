@@ -14,16 +14,28 @@ import (
 
 // BuildSubmission assembles extensions/<appID>/releases/<version>/ under
 // checkout (cfg.MarketplaceRepo.Checkout), writing bundle.zip,
-// extension.yaml, and an optional screenshots/ dir, then commits (signed
-// off, per CLAUDE.md's DCO convention) on branch publish/<appID>-v<version>.
+// extension.yaml, an optional cover.png, and an optional screenshots/ dir,
+// then commits (signed off, per CLAUDE.md's DCO convention) on branch
+// publish/<appID>-v<version>.
 //
 // checkout is reset onto origin/<default branch> before branching so each
 // extension in a batch starts from a clean base — necessary since a prior
 // extension's submission in the same publish run leaves the checkout on its
 // own branch.
-func BuildSubmission(cfg *config.Config, checkout, appID, version string, ext ExtensionYAML, bundlePath string, screenshotPaths []string) (branch string, err error) {
+//
+// Runs `git lfs install --local` before staging anything — checkout is
+// EnsureCheckout's hard-reset-only clone, which never ran that itself, so
+// without it `git add` on bundle.zip/cover.png/screenshots commits raw
+// bytes despite .gitattributes marking those paths filter=lfs. That gap is
+// owncloud/marketplace#238; local, idempotent, and safe to call on every
+// run.
+func BuildSubmission(cfg *config.Config, checkout, appID, version string, ext ExtensionYAML, bundlePath string, screenshotPaths []string, coverBytes []byte) (branch string, err error) {
 	relDir := filepath.Join("extensions", appID, "releases", version)
 	absDir := filepath.Join(checkout, relDir)
+
+	if err := runGit(checkout, "lfs", "install", "--local"); err != nil {
+		return "", fmt.Errorf("git lfs install: %w", err)
+	}
 
 	branch = "publish/" + appID + "-v" + version
 	if err := checkoutBranch(checkout, branch, cfg.MarketplaceRepo.DefaultBranch); err != nil {
@@ -36,6 +48,12 @@ func BuildSubmission(cfg *config.Config, checkout, appID, version string, ext Ex
 
 	if err := copyFile(bundlePath, filepath.Join(absDir, "bundle.zip")); err != nil {
 		return "", fmt.Errorf("copy bundle.zip: %w", err)
+	}
+
+	if len(coverBytes) > 0 {
+		if err := os.WriteFile(filepath.Join(absDir, "cover.png"), coverBytes, 0o644); err != nil {
+			return "", fmt.Errorf("write cover.png: %w", err)
+		}
 	}
 
 	yamlBytes, err := yaml.Marshal(ext)

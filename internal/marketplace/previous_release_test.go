@@ -1,7 +1,9 @@
 package marketplace
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -101,5 +103,76 @@ func TestPreviousRelease_NoPriorRelease(t *testing.T) {
 	minOCIS, source := ResolveMinOCIS(cfg, "never-published-ext", prev, func(string, ...any) {})
 	if source != MinOCISSourceNone || minOCIS != "" {
 		t.Errorf("ResolveMinOCIS(nil) = (%q, %q), want (\"\", %q)", minOCIS, source, MinOCISSourceNone)
+	}
+}
+
+func TestPreviousCoverBytes_NoPriorRelease(t *testing.T) {
+	got, err := previousCoverBytes(t.TempDir(), "master", "x", nil)
+	if err != nil {
+		t.Fatalf("previousCoverBytes: %v", err)
+	}
+	if got != nil {
+		t.Errorf("got %v, want nil (no prior release)", got)
+	}
+}
+
+func TestPreviousCoverBytes_PriorReleaseHasNoCover(t *testing.T) {
+	prev := &ExtensionYAML{Version: "0.1.0", Cover: false}
+	got, err := previousCoverBytes(t.TempDir(), "master", "x", prev)
+	if err != nil {
+		t.Fatalf("previousCoverBytes: %v", err)
+	}
+	if got != nil {
+		t.Errorf("got %v, want nil (prev.Cover is false)", got)
+	}
+}
+
+// TestPreviousCoverBytes_SmudgesRealLFSContent reproduces the exact bug
+// this function exists to avoid: reading a prior release's cover.png must
+// yield real image bytes even when the file is stored as a Git LFS
+// pointer, never the ~130-byte pointer text itself — which is exactly what
+// a naive `git show` (no smudge step) would return, and exactly the class
+// of bug owncloud/marketplace#238 reported for bundle.zip/screenshots.
+func TestPreviousCoverBytes_SmudgesRealLFSContent(t *testing.T) {
+	upstream := initTestRepo(t)
+	runGitCmd(t, upstream, "branch", "-M", "master")
+	runGitCmd(t, upstream, "lfs", "install", "--local")
+	if err := os.WriteFile(filepath.Join(upstream, ".gitattributes"), []byte("*.png filter=lfs diff=lfs merge=lfs -text\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	relDir := filepath.Join(upstream, "extensions", "draw-io", "releases", "0.1.0")
+	if err := os.MkdirAll(relDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	realContent := []byte("not actually a PNG, just needs to survive the round trip intact")
+	if err := os.WriteFile(filepath.Join(relDir, "cover.png"), realContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitCmd(t, upstream, "add", ".")
+	runGitCmd(t, upstream, "commit", "-q", "-m", "add draw-io 0.1.0 cover")
+
+	// Confirm the setup actually produced an LFS pointer, not a raw blob —
+	// otherwise this test would pass without ever exercising the smudge
+	// path it's meant to cover.
+	committed, err := exec.Command("git", "-C", upstream, "show", "HEAD:extensions/draw-io/releases/0.1.0/cover.png").Output()
+	if err != nil {
+		t.Fatalf("git show (setup check): %v", err)
+	}
+	if !bytes.HasPrefix(committed, []byte("version https://git-lfs.github.com/spec/v1")) {
+		t.Fatalf("test setup did not produce an LFS pointer — got %q", committed)
+	}
+
+	checkout := t.TempDir()
+	runGitCmd(t, checkout, "clone", "-q", upstream, ".")
+	runGitCmd(t, checkout, "lfs", "install", "--local")
+
+	prev := &ExtensionYAML{Version: "0.1.0", Cover: true}
+	got, err := previousCoverBytes(checkout, "master", "draw-io", prev)
+	if err != nil {
+		t.Fatalf("previousCoverBytes: %v", err)
+	}
+	if string(got) != string(realContent) {
+		t.Errorf("got %q, want the real smudged content %q (not the LFS pointer text)", got, realContent)
 	}
 }

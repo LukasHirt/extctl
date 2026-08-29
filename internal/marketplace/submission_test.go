@@ -87,7 +87,7 @@ func TestBuildSubmission_RerunWithIdenticalContentSkipsCommit(t *testing.T) {
 
 	ext := ExtensionYAML{ID: "com.example.x", Name: "X", License: "AGPL-3.0", Version: "0.1.0", Authors: []Author{{Name: "A"}}, Tags: []string{"extension"}}
 
-	branch1, err := BuildSubmission(cfg, checkout, "x", "0.1.0", ext, bundlePath, nil)
+	branch1, err := BuildSubmission(cfg, checkout, "x", "0.1.0", ext, bundlePath, nil, nil)
 	if err != nil {
 		t.Fatalf("first BuildSubmission: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestBuildSubmission_RerunWithIdenticalContentSkipsCommit(t *testing.T) {
 
 	// Simulate a rerun (e.g. push/PR-create failed after the first commit
 	// succeeded) — same appID/version, same content, same branch name.
-	branch2, err := BuildSubmission(cfg, checkout, "x", "0.1.0", ext, bundlePath, nil)
+	branch2, err := BuildSubmission(cfg, checkout, "x", "0.1.0", ext, bundlePath, nil, nil)
 	if err != nil {
 		t.Fatalf("second BuildSubmission (rerun): %v", err)
 	}
@@ -136,7 +136,7 @@ func TestBranchHasCompleteSubmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	ext := ExtensionYAML{ID: "com.example.x", License: "AGPL-3.0", Version: "0.1.0", Tags: []string{"extension"}}
-	if _, err := BuildSubmission(cfg, checkout, "x", "0.1.0", ext, bundlePath, nil); err != nil {
+	if _, err := BuildSubmission(cfg, checkout, "x", "0.1.0", ext, bundlePath, nil, nil); err != nil {
 		t.Fatalf("BuildSubmission: %v", err)
 	}
 	if !branchHasCompleteSubmission(checkout, "publish/x-v0.1.0", "x", "0.1.0") {
@@ -194,7 +194,7 @@ func TestAmendSubmissionScreenshots_ReplacesContentWithoutNewCommit(t *testing.T
 
 	ext := ExtensionYAML{ID: "com.example.x", License: "AGPL-3.0", Version: "0.1.0", Tags: []string{"extension"},
 		ScreenshotCaptions: []string{"old caption"}}
-	if _, err := BuildSubmission(cfg, checkout, "x", "0.1.0", ext, bundlePath, nil); err != nil {
+	if _, err := BuildSubmission(cfg, checkout, "x", "0.1.0", ext, bundlePath, nil, nil); err != nil {
 		t.Fatalf("BuildSubmission: %v", err)
 	}
 	firstHead := gitRevParse(t, checkout, "HEAD")
@@ -261,7 +261,7 @@ func TestAmendSubmissionScreenshots_NoNewScreenshotsIsANoop(t *testing.T) {
 	}
 
 	ext := ExtensionYAML{ID: "com.example.x", License: "AGPL-3.0", Version: "0.1.0", Tags: []string{"extension"}}
-	if _, err := BuildSubmission(cfg, checkout, "x", "0.1.0", ext, bundlePath, nil); err != nil {
+	if _, err := BuildSubmission(cfg, checkout, "x", "0.1.0", ext, bundlePath, nil, nil); err != nil {
 		t.Fatalf("BuildSubmission: %v", err)
 	}
 	firstHead := gitRevParse(t, checkout, "HEAD")
