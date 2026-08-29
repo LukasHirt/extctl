@@ -31,16 +31,19 @@ func testPublishConfig() *config.Config {
 func TestBuildExtensionYAML_MissingLicenseErrors(t *testing.T) {
 	cfg := testPublishConfig()
 	pkg := PackageJSON{Description: "does things", License: ""}
-	if _, err := BuildExtensionYAML(cfg, "some-ext", "0.1.0", pkg, []string{"extension"}, "", nil); err == nil {
+	if _, err := BuildExtensionYAML(cfg, "some-ext", "0.1.0", pkg, []string{"extension"}, "", nil, nil, false); err == nil {
 		t.Fatal("expected an error when package.json has no license field, got nil")
 	}
 }
 
+// TestBuildExtensionYAML_Fields covers a FIRST-EVER submission (prev ==
+// nil): name/subtitle fall through to the generated fallback, cover stays
+// false since no cover bytes were fetched.
 func TestBuildExtensionYAML_Fields(t *testing.T) {
 	cfg := testPublishConfig()
 	pkg := PackageJSON{Description: "View and edit draw.io diagram files.", License: "AGPL-3.0"}
 
-	ext, err := BuildExtensionYAML(cfg, "draw-io", "0.2.0", pkg, []string{"editor", "viewer"}, "6.2.0", []string{"caption one"})
+	ext, err := BuildExtensionYAML(cfg, "draw-io", "0.2.0", pkg, []string{"editor", "viewer"}, "6.2.0", []string{"caption one"}, nil, false)
 	if err != nil {
 		t.Fatalf("BuildExtensionYAML: %v", err)
 	}
@@ -49,10 +52,10 @@ func TestBuildExtensionYAML_Fields(t *testing.T) {
 		t.Errorf("ID = %q", ext.ID)
 	}
 	if ext.Name != "Draw Io" {
-		t.Errorf("Name = %q", ext.Name)
+		t.Errorf("Name = %q, want the humanized app-id fallback (no prior release to reuse a curated name from)", ext.Name)
 	}
 	if ext.Subtitle != pkg.Description {
-		t.Errorf("Subtitle = %q, want package.json description verbatim", ext.Subtitle)
+		t.Errorf("Subtitle = %q, want package.json description verbatim (no prior release to reuse a curated subtitle from)", ext.Subtitle)
 	}
 	if ext.License != "AGPL-3.0" {
 		t.Errorf("License = %q, want the package.json value verbatim", ext.License)
@@ -76,7 +79,58 @@ func TestBuildExtensionYAML_Fields(t *testing.T) {
 		t.Errorf("ScreenshotCaptions = %+v", ext.ScreenshotCaptions)
 	}
 	if ext.Cover {
-		t.Error("Cover should default to false — no cover-image selection logic exists yet")
+		t.Error("Cover should be false when hasCoverBytes is false, regardless of anything else")
+	}
+}
+
+// TestBuildExtensionYAML_ReusesPrevNameAndSubtitle reproduces the bug this
+// fix addresses: BuildExtensionYAML used to always overwrite name/subtitle
+// with its own generated guesses on every republish, clobbering whatever a
+// human had already curated for this extension's earlier releases — the
+// same pattern owncloud/marketplace#240 reported for minOCIS.
+func TestBuildExtensionYAML_ReusesPrevNameAndSubtitle(t *testing.T) {
+	cfg := testPublishConfig()
+	pkg := PackageJSON{Description: "ownCloud web draw.io integration", License: "Apache-2.0"}
+	prev := &ExtensionYAML{Name: "Draw.io", Subtitle: "View and edit draw.io diagram files (.drawio).", Cover: true}
+
+	ext, err := BuildExtensionYAML(cfg, "draw-io", "0.3.0", pkg, nil, "", nil, prev, false)
+	if err != nil {
+		t.Fatalf("BuildExtensionYAML: %v", err)
+	}
+	if ext.Name != prev.Name {
+		t.Errorf("Name = %q, want the curated prev.Name %q reused verbatim", ext.Name, prev.Name)
+	}
+	if ext.Subtitle != prev.Subtitle {
+		t.Errorf("Subtitle = %q, want the curated prev.Subtitle %q reused verbatim", ext.Subtitle, prev.Subtitle)
+	}
+}
+
+// TestBuildExtensionYAML_CoverNeverTrueWithoutBytes reproduces a bug this
+// fix is careful NOT to introduce: cover must never be true unless the
+// caller actually has real cover.png bytes to write alongside this
+// extension.yaml, even when prev.Cover is true — otherwise a submission
+// whose cover fetch failed would commit a dangling `cover: true` with no
+// file behind it, reproducing owncloud/marketplace#238's class of bug for
+// cover art specifically.
+func TestBuildExtensionYAML_CoverNeverTrueWithoutBytes(t *testing.T) {
+	cfg := testPublishConfig()
+	pkg := PackageJSON{License: "Apache-2.0"}
+	prev := &ExtensionYAML{Name: "X", Subtitle: "Y", Cover: true}
+
+	ext, err := BuildExtensionYAML(cfg, "x", "0.2.0", pkg, nil, "", nil, prev, false)
+	if err != nil {
+		t.Fatalf("BuildExtensionYAML: %v", err)
+	}
+	if ext.Cover {
+		t.Error("Cover = true, want false: hasCoverBytes was false, prev.Cover alone must not set it")
+	}
+
+	ext, err = BuildExtensionYAML(cfg, "x", "0.2.0", pkg, nil, "", nil, prev, true)
+	if err != nil {
+		t.Fatalf("BuildExtensionYAML: %v", err)
+	}
+	if !ext.Cover {
+		t.Error("Cover = false, want true: hasCoverBytes was true")
 	}
 }
 
@@ -88,7 +142,7 @@ func TestBuildExtensionYAML_EmptyTagsPassThrough(t *testing.T) {
 	cfg := testPublishConfig()
 	pkg := PackageJSON{License: "AGPL-3.0"}
 
-	ext, err := BuildExtensionYAML(cfg, "some-ext", "0.1.0", pkg, nil, "", nil)
+	ext, err := BuildExtensionYAML(cfg, "some-ext", "0.1.0", pkg, nil, "", nil, nil, false)
 	if err != nil {
 		t.Fatalf("BuildExtensionYAML: %v", err)
 	}

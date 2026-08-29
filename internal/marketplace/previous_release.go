@@ -1,7 +1,9 @@
 package marketplace
 
 import (
+	"bytes"
 	"fmt"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,6 +40,41 @@ func PreviousRelease(checkout, branch, appID string) (*ExtensionYAML, error) {
 		return nil, fmt.Errorf("parse extension.yaml for %s@%s: %w", appID, latest, err)
 	}
 	return &prev, nil
+}
+
+// previousCoverBytes returns appID's most recent prior marketplace
+// release's cover.png content — real image bytes, not an LFS pointer,
+// regardless of whether checkout's working tree happens to have git-lfs
+// smudging active — or nil if that release has no cover (prev.Cover is
+// false) or prev is nil (first-ever submission).
+//
+// Reads straight from git history via `git show` + `git lfs smudge`
+// (the same two-step git plumbing used to resolve every previous release's
+// cover art during the owncloud/marketplace#240 cleanup this function
+// generalizes) rather than trusting checkout's ambient working-tree state,
+// since relying on that would silently reproduce owncloud/marketplace#238
+// for cover.png specifically: BuildSubmission committing whatever bytes are
+// on disk, LFS pointer or not.
+func previousCoverBytes(checkout, branch, appID string, prev *ExtensionYAML) ([]byte, error) {
+	if prev == nil || !prev.Cover {
+		return nil, nil
+	}
+	relPath := fmt.Sprintf("extensions/%s/releases/%s/cover.png", appID, prev.Version)
+	raw, err := gitpkg.Output(checkout, "show", fmt.Sprintf("origin/%s:%s", branch, relPath))
+	if err != nil {
+		return nil, fmt.Errorf("read previous cover.png for %s: %w", appID, err)
+	}
+
+	cmd := exec.Command("git", "lfs", "smudge")
+	cmd.Dir = checkout
+	cmd.Stdin = bytes.NewReader(raw)
+	var out, stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("smudge previous cover.png for %s: %w\n%s", appID, err, strings.TrimSpace(stderr.String()))
+	}
+	return out.Bytes(), nil
 }
 
 // listExistingVersions returns the release version directory names already
